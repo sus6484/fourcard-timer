@@ -91,11 +91,15 @@ export default function App() {
     }
   }
 
+  const openAdminEntry = () => {
+    setPinOpen(true)
+    setPinError('')
+  }
+
   const handleLogoPointerDown = () => {
     logoPressStart.current = Date.now()
     logoPressTimer.current = window.setTimeout(() => {
-      setPinOpen(true)
-      setPinError('')
+      openAdminEntry()
     }, 2000)
   }
 
@@ -181,9 +185,13 @@ export default function App() {
               <strong>{formatAnte(nextLevel)}</strong>
             </div>
             <Controls isRunning={isRunning} onAction={handleControl} />
-            {resetConfirm && <p className="reset-hint">Reset again to confirm</p>}
+            {resetConfirm && <p className="reset-hint">한 번 더 누르면 리셋됩니다</p>}
           </div>
         </footer>
+
+        <button type="button" className="settings-entry" onClick={openAdminEntry}>
+          설정
+        </button>
       </main>
 
       <PinModal

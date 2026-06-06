@@ -273,6 +273,25 @@ select {
   font-size: 14px;
 }
 
+.settings-entry {
+  position: fixed;
+  left: clamp(20px, 3vw, 40px);
+  bottom: clamp(16px, 2vw, 28px);
+  border: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--gold);
+  padding: 10px 18px;
+  font-size: clamp(14px, 1.4vw, 18px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.settings-entry:hover {
+  background: rgba(200, 169, 107, 0.12);
+}
+
 .admin-overlay,
 .pin-overlay {
   position: fixed;
@@ -401,6 +420,12 @@ select {
 .pin-modal__error {
   color: #ff8e8e;
   margin: 0;
+}
+
+.pin-modal__hint {
+  margin: 0 0 12px;
+  color: var(--gold-soft);
+  font-size: 13px;
 }
 
 .pin-modal__actions {

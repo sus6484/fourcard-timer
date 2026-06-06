@@ -61,7 +61,7 @@ export default function AdminPanel({
   }
 
   const handleCreate = () => {
-    const game = createGame(`custom-${Date.now()}`, 'New Game', [emptyLevel(1)], { custom: true })
+    const game = createGame(`custom-${Date.now()}`, '새 게임', [emptyLevel(1)], { custom: true })
     onSaveGames([...games, game])
     onSelectGame(game.id)
   }
@@ -79,17 +79,17 @@ export default function AdminPanel({
       <div className="admin-panel">
         <header className="admin-panel__header">
           <div>
-            <p className="admin-panel__eyebrow">Admin Mode</p>
-            <h2>Game Settings</h2>
+            <p className="admin-panel__eyebrow">관리자 모드</p>
+            <h2>게임 설정</h2>
           </div>
           <button type="button" className="admin-panel__close" onClick={onClose}>
-            Close
+            닫기
           </button>
         </header>
 
         <section className="admin-panel__section">
           <label className="admin-field">
-            <span>Admin PIN</span>
+            <span>관리자 PIN (4자리)</span>
             <input
               type="password"
               maxLength={4}
@@ -102,7 +102,7 @@ export default function AdminPanel({
         <section className="admin-panel__section admin-panel__games">
           <div className="admin-panel__row">
             <label className="admin-field admin-field--grow">
-              <span>Game</span>
+              <span>게임 선택</span>
               <select value={activeGame.id} onChange={(event) => onSelectGame(event.target.value)}>
                 {games.map((game) => (
                   <option key={game.id} value={game.id}>
@@ -111,13 +111,13 @@ export default function AdminPanel({
                 ))}
               </select>
             </label>
-            <button type="button" onClick={handleDuplicate}>Duplicate</button>
-            <button type="button" onClick={handleCreate}>New</button>
-            <button type="button" onClick={handleDelete} disabled={games.length <= 1}>Delete</button>
+            <button type="button" onClick={handleDuplicate}>복사</button>
+            <button type="button" onClick={handleCreate}>새 게임</button>
+            <button type="button" onClick={handleDelete} disabled={games.length <= 1}>삭제</button>
           </div>
 
           <label className="admin-field">
-            <span>Game Name</span>
+            <span>게임 이름</span>
             <input
               type="text"
               value={activeGame.name}
@@ -126,11 +126,11 @@ export default function AdminPanel({
           </label>
 
           <label className="admin-field">
-            <span>Memo</span>
+            <span>메모 (상금, 리엔트리 등)</span>
             <textarea
               rows={4}
               value={activeGame.memo}
-              placeholder="1st Prize, Re-entry, notes..."
+              placeholder={'1등 상금\n2등 상금\n리엔트리 2회'}
               onChange={(event) => updateActiveGame({ memo: event.target.value })}
             />
           </label>
@@ -138,8 +138,8 @@ export default function AdminPanel({
 
         <section className="admin-panel__section">
           <div className="admin-panel__row admin-panel__row--between">
-            <h3>Levels</h3>
-            <button type="button" onClick={addLevel}>Add Level</button>
+            <h3>레벨 / 블라인드</h3>
+            <button type="button" onClick={addLevel}>레벨 추가</button>
           </div>
 
           <div className="admin-levels">
@@ -155,7 +155,7 @@ export default function AdminPanel({
                   />
                 </label>
                 <label>
-                  <span>Min</span>
+                  <span>분</span>
                   <input
                     type="number"
                     min="1"
@@ -199,10 +199,10 @@ export default function AdminPanel({
                     checked={level.isBreak}
                     onChange={(event) => updateLevel(index, 'isBreak', event.target.checked)}
                   />
-                  <span>Break</span>
+                  <span>브레이크</span>
                 </label>
                 <button type="button" onClick={() => removeLevel(index)} disabled={activeGame.levels.length <= 1}>
-                  Remove
+                  삭제
                 </button>
               </div>
             ))}
@@ -210,7 +210,7 @@ export default function AdminPanel({
         </section>
 
         <footer className="admin-panel__footer">
-          <p>Changes save automatically on this device.</p>
+          <p>변경 내용은 이 기기에 자동 저장됩니다.</p>
         </footer>
       </div>
     </div>
@@ -232,7 +232,8 @@ export function PinModal({ open, onClose, onSubmit, error }) {
           setPin('')
         }}
       >
-        <h2>Admin PIN</h2>
+        <h2>관리자 PIN</h2>
+        <p className="pin-modal__hint">처음 사용 시 기본 PIN: 0000</p>
         <input
           autoFocus
           type="password"
@@ -244,8 +245,8 @@ export function PinModal({ open, onClose, onSubmit, error }) {
         />
         {error && <p className="pin-modal__error">{error}</p>}
         <div className="pin-modal__actions">
-          <button type="button" onClick={onClose}>Cancel</button>
-          <button type="submit">Enter</button>
+          <button type="button" onClick={onClose}>취소</button>
+          <button type="submit">확인</button>
         </div>
       </form>
     </div>
