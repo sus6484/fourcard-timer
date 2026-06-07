@@ -1,9 +1,11 @@
+import { assetPath } from '../lib/assets.js'
+
 const controls = [
-  { id: 'prev', icon: '/assets/btn_previous2.png', label: 'Previous level' },
-  { id: 'toggle', icon: '/assets/btn_play.png', label: 'Play or pause' },
-  { id: 'forward', icon: '/assets/btn_plus.png', label: 'Add one minute' },
-  { id: 'next', icon: '/assets/btn_next.png', label: 'Next level' },
-  { id: 'reset', icon: '/assets/btn_reset2.png', label: 'Reset timer' },
+  { id: 'prev', icon: assetPath('assets/btn_previous2.png'), label: 'Previous level' },
+  { id: 'toggle', icon: assetPath('assets/btn_play.png'), label: 'Play or pause' },
+  { id: 'forward', icon: assetPath('assets/btn_plus.png'), label: 'Add one minute' },
+  { id: 'next', icon: assetPath('assets/btn_next.png'), label: 'Next level' },
+  { id: 'reset', icon: assetPath('assets/btn_reset2.png'), label: 'Reset timer' },
 ]
 
 export default function Controls({ isRunning, onAction }) {

@@ -1,4 +1,6 @@
 node_modules
 dist
+release
 _apk_preview
+scripts/release-bundle.js
 .DS_Store

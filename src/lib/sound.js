@@ -1,8 +1,10 @@
+import { assetPath } from './assets.js'
+
 const sounds = {}
 
 function getSound(name) {
   if (!sounds[name]) {
-    sounds[name] = new Audio(`/assets/${name}.mp3`)
+    sounds[name] = new Audio(assetPath(`assets/${name}.mp3`))
   }
   return sounds[name]
 }

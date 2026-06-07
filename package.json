@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:file": "vite build --mode file && node scripts/patch-file-build.js",
     "build:ghpages": "vite build --mode ghpages",
     "preview": "vite preview"
   },
@@ -15,6 +16,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.5.2",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vite-plugin-singlefile": "^2.3.3"
   }
 }

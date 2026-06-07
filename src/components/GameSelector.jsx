@@ -1,10 +1,17 @@
-export default function GameSelector({ games, activeGameId, open, onToggle, onSelect }) {
+export default function GameSelector({
+  games,
+  activeGameId,
+  emptyLabel = 'Game',
+  open,
+  onToggle,
+  onSelect,
+}) {
   const activeGame = games.find((game) => game.id === activeGameId)
 
   return (
     <div className="game-selector">
       <button type="button" className="game-selector__trigger" onClick={onToggle}>
-        {activeGame?.name ?? 'Game'}
+        {activeGame?.name ?? emptyLabel}
       </button>
       {open && (
         <>

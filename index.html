@@ -13,6 +13,14 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      if (location.protocol === 'file:') {
+        var path = location.pathname.replace(/\\/g, '/')
+        if (!path.endsWith('/release/index.html')) {
+          window.location.replace('release/index.html')
+        }
+      }
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

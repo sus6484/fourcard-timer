@@ -11,6 +11,20 @@ npm run dev
 
 브라우저에서 `http://localhost:5173` 을 엽니다. 가로(landscape) 화면에 최적화되어 있습니다.
 
+### index.html로 바로 열기
+
+```bash
+npm run build:file
+```
+
+빌드 후 아래 중 하나로 열면 됩니다.
+
+- 프로젝트 폴더의 **`index.html`** 더블클릭 → `release/index.html`로 이동
+- **`release/index.html`** 더블클릭 (바로 열기)
+- Windows: **`open-timer.bat`** 더블클릭 (빌드 없으면 자동 빌드 후 실행)
+
+코드를 수정한 뒤에는 `npm run build:file`을 다시 실행하세요.
+
 ## 사용법
 
 - **좌상단 게임 이름**: 프리셋 게임 선택
