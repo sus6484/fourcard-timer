@@ -25,6 +25,12 @@ npm run build:file
 
 코드를 수정한 뒤에는 `npm run build:file`을 다시 실행하세요.
 
+### GitHub Pages (웹 배포)
+
+- 배포 URL: https://sus6484.github.io/fourcard-timer/
+- `main`에 push하면 GitHub Actions가 `npm run build:ghpages` 결과를 `gh-pages` 브랜치에 올립니다.
+- **최초 1회:** GitHub 저장소 → **Settings → Pages → Build and deployment → Source** 를 **Deploy from a branch** → **`gh-pages` / `/ (root)`** 로 설정하세요. (`main` 브랜치 root를 쓰면 빈 화면이 납니다.)
+
 ## 사용법
 
 - **좌상단 게임 이름**: 프리셋 게임 선택
