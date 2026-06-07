@@ -570,6 +570,10 @@ select {
   pointer-events: none;
 }
 
+.app-sync-status--blocked {
+  color: #ffcc88;
+}
+
 .app-sync-status--error {
   color: #ffb3b3;
 }

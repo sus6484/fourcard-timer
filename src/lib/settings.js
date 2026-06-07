@@ -149,13 +149,27 @@ export function loadSettings() {
 }
 
 export function applyRemoteGlobalSettings(localState, remote) {
-  const hasRemoteGames = Array.isArray(remote?.globalGames) && remote.globalGames.length > 0
+  const remoteGames = Array.isArray(remote?.globalGames) ? remote.globalGames : []
+  const hasRemoteGames = remoteGames.length > 0
+  const remoteUpdatedAt = typeof remote?.updatedAt === 'string' ? remote.updatedAt : null
+  const localUpdatedAt = typeof localState.cloudUpdatedAt === 'string' ? localState.cloudUpdatedAt : null
+  const shouldApplyGames =
+    hasRemoteGames &&
+    (!localUpdatedAt || !remoteUpdatedAt || remoteUpdatedAt >= localUpdatedAt)
 
   return normalizeState({
     ...localState,
-    globalGames: hasRemoteGames ? remote.globalGames : localState.globalGames,
+    globalGames: shouldApplyGames ? remoteGames : localState.globalGames,
     adminPin: typeof remote?.adminPin === 'string' ? remote.adminPin : localState.adminPin,
+    cloudUpdatedAt: remoteUpdatedAt ?? localState.cloudUpdatedAt ?? null,
   })
+}
+
+export function withCloudUpdatedAt(state, updatedAt) {
+  return {
+    ...state,
+    cloudUpdatedAt: updatedAt ?? state.cloudUpdatedAt ?? null,
+  }
 }
 
 export function saveSettings(state) {

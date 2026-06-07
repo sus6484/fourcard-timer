@@ -8,7 +8,8 @@
     "build": "vite build",
     "build:file": "vite build --mode file && node scripts/patch-file-build.js",
     "build:ghpages": "vite build --mode ghpages",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "serve:file": "vite preview --outDir release --host 127.0.0.1 --port 4173"
   },
   "dependencies": {
     "react": "^19.1.0",

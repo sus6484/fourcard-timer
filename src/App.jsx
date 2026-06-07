@@ -5,10 +5,15 @@ import MemoPanel from './components/MemoPanel.jsx'
 import TopGameBar from './components/TopGameBar.jsx'
 import { useTimer, useWakeLock } from './hooks/useTimer.js'
 import logoUrl from '../image/logo.png'
-import { fetchGlobalFromCloud, saveGlobalToCloud } from './lib/globalSync.js'
+import {
+  fetchGlobalFromCloud,
+  getNetworkSyncBlockedReason,
+  saveGlobalToCloud,
+} from './lib/globalSync.js'
 import { formatAnte, formatBlinds, formatTime } from './lib/presets.js'
 import {
   applyRemoteGlobalSettings,
+  withCloudUpdatedAt,
   getActiveGame,
   getBranchGames,
   loadSettings,
@@ -43,6 +48,13 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false
+    const blocked = getNetworkSyncBlockedReason()
+
+    if (blocked) {
+      setGlobalSyncStatus('blocked')
+      setGlobalSyncError(blocked)
+      return undefined
+    }
 
     async function syncGlobalOnBoot() {
       setGlobalSyncStatus('loading')
@@ -233,19 +245,24 @@ export default function App() {
     setAdminSaveError('')
 
     try {
-      await saveGlobalToCloud({
+      const result = await saveGlobalToCloud({
         pin: verifiedGlobalPin.current || settings.adminPin,
         globalGames: draft.games,
         adminPin: draft.adminPin,
       })
 
-      persistSettings({
-        ...settings,
-        globalGames: draft.games,
-        activeGlobalGameId: draft.activeGameId,
-        adminPin: draft.adminPin,
-        branches: draft.branches,
-      })
+      persistSettings(
+        withCloudUpdatedAt(
+          {
+            ...settings,
+            globalGames: draft.games,
+            activeGlobalGameId: draft.activeGameId,
+            adminPin: draft.adminPin,
+            branches: draft.branches,
+          },
+          result.updatedAt,
+        ),
+      )
 
       if (draft.adminPin !== verifiedGlobalPin.current) {
         verifiedGlobalPin.current = draft.adminPin
@@ -286,14 +303,21 @@ export default function App() {
       ? '전체 게임 동기화 중…'
       : globalSyncStatus === 'error'
         ? '전체 게임 동기화 실패'
-        : ''
+        : globalSyncStatus === 'blocked'
+          ? '구글 시트 연동 불가'
+          : ''
+  const syncStatusDetail =
+    globalSyncStatus === 'error' || globalSyncStatus === 'blocked' ? globalSyncError : ''
 
   return (
     <div className="app-shell">
       {syncStatusLabel && (
-        <p className={`app-sync-status app-sync-status--${globalSyncStatus}`} role="status">
+        <p
+          className={`app-sync-status app-sync-status--${globalSyncStatus === 'blocked' ? 'blocked' : globalSyncStatus === 'error' ? 'error' : globalSyncStatus}`}
+          role="status"
+        >
           {syncStatusLabel}
-          {globalSyncError ? `: ${globalSyncError}` : ''}
+          {syncStatusDetail ? `: ${syncStatusDetail}` : ''}
         </p>
       )}
 
