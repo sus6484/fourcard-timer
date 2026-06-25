@@ -1,24 +1,20 @@
-import { assetPath } from './assets.js'
-
-const sounds = {}
-
-function getSound(name) {
-  if (!sounds[name]) {
-    sounds[name] = new Audio(assetPath(`assets/${name}.mp3`))
-  }
-  return sounds[name]
+function speak(text) {
+  if (!window.speechSynthesis) return
+  window.speechSynthesis.cancel()
+  const utterance = new SpeechSynthesisUtterance(text)
+  utterance.lang = 'en-US'
+  utterance.rate = 1.05
+  window.speechSynthesis.speak(utterance)
 }
 
-export function playSound(name) {
-  const audio = getSound(name)
-  audio.currentTime = 0
-  audio.play().catch(() => {})
+export function playGameStart() {
+  speak('Game start')
 }
 
-export function playLevelWarning(isBreak) {
-  playSound(isBreak ? 'one_minute_break' : 'one_minute_round')
+export function playBlindsUp() {
+  speak('Blinds up')
 }
 
-export function playLevelComplete(isBreak) {
-  playSound(isBreak ? 'end_of_break' : 'end_of_round')
+export function playBreakTime() {
+  speak('Break time')
 }

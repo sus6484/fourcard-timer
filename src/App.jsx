@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AdminPanel, { PinModal } from './components/AdminPanel.jsx'
 import Controls from './components/Controls.jsx'
+import TimeScrubber from './components/TimeScrubber.jsx'
 import MemoPanel from './components/MemoPanel.jsx'
 import TopGameBar from './components/TopGameBar.jsx'
 import { useTimer, useWakeLock } from './hooks/useTimer.js'
@@ -21,7 +22,7 @@ import {
   updateScreenMemo,
   updateMemoStyle,
 } from './lib/settings.js'
-import { playLevelComplete, playLevelWarning } from './lib/sound.js'
+import { playBlindsUp, playBreakTime, playGameStart } from './lib/sound.js'
 
 export default function App() {
   const [settings, setSettings] = useState(loadSettings)
@@ -38,6 +39,7 @@ export default function App() {
   const [adminSaveError, setAdminSaveError] = useState('')
   const [adminSaving, setAdminSaving] = useState(false)
   const verifiedGlobalPin = useRef('')
+  const autoStartNextLevelRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -77,19 +79,17 @@ export default function App() {
 
   const handleLevelComplete = useCallback(() => {
     if (!activeGame) return
-    playLevelComplete(currentLevel?.isBreak)
     if (levelIndex < levels.length - 1) {
+      const upcoming = levels[levelIndex + 1]
+      if (upcoming?.isBreak) playBreakTime()
+      else playBlindsUp()
+      autoStartNextLevelRef.current = true
       setLevelIndex((index) => index + 1)
     }
-  }, [activeGame, currentLevel?.isBreak, levelIndex, levels.length])
+  }, [activeGame, levelIndex, levels])
 
-  const handleMinuteWarning = useCallback(() => {
-    playLevelWarning(currentLevel?.isBreak)
-  }, [currentLevel?.isBreak])
-
-  const { remainingSeconds, isRunning, toggle, reset } = useTimer(initialSeconds, {
+  const { remainingSeconds, isRunning, toggle, reset, adjustSeconds, setSeconds } = useTimer(initialSeconds, {
     onComplete: handleLevelComplete,
-    onMinuteWarning: handleMinuteWarning,
   })
 
   useWakeLock(isRunning)
@@ -104,7 +104,9 @@ export default function App() {
   }, [activeGame?.id])
 
   useEffect(() => {
-    reset(initialSeconds)
+    const autoStart = autoStartNextLevelRef.current
+    autoStartNextLevelRef.current = false
+    reset(initialSeconds, { autoStart })
   }, [activeGame?.id, levelIndex, initialSeconds, reset])
 
   const persistSettings = (nextSettings) => {
@@ -122,11 +124,24 @@ export default function App() {
       return
     }
     if (action === 'toggle') {
+      if (!isRunning && levelIndex === 0 && remainingSeconds === initialSeconds) {
+        playGameStart()
+      }
       toggle()
       return
     }
     if (action === 'next') {
       if (activeGame && levelIndex < levels.length - 1) setLevelIndex((index) => index + 1)
+      return
+    }
+    if (action === 'minus10') {
+      setResetConfirm(false)
+      adjustSeconds(-10)
+      return
+    }
+    if (action === 'plus10') {
+      setResetConfirm(false)
+      adjustSeconds(10)
       return
     }
     if (action === 'reset') {
@@ -269,13 +284,13 @@ export default function App() {
           />
         </aside>
 
+        <div className="timer-screen__watermark" aria-hidden="true">
+          <img src={logoUrl} alt="" className="timer-screen__watermark-logo" />
+        </div>
+
         <header className="timer-screen__top">
           <div className="timer-screen__level-block">
             <p className="timer-screen__level">{levelLabel}</p>
-          </div>
-
-          <div className="brand-lock" aria-label="FOURCARD logo">
-            <img src={logoUrl} alt="" className="brand-lock__logo" />
           </div>
 
           <TopGameBar
@@ -320,8 +335,20 @@ export default function App() {
             <Controls isRunning={isRunning} onAction={handleControl} />
             {resetConfirm && <p className="reset-hint">한 번 더 누르면 LEVEL 1부터 리셋됩니다</p>}
           </div>
-        </footer>
 
+          <div className="timer-screen__scrubber">
+            <TimeScrubber
+              isRunning={isRunning}
+              remainingSeconds={remainingSeconds}
+              maxSeconds={Math.max(initialSeconds, remainingSeconds)}
+              onToggle={() => handleControl('toggle')}
+              onSeek={(seconds) => {
+                setResetConfirm(false)
+                setSeconds(seconds)
+              }}
+            />
+          </div>
+        </footer>
       </main>
 
       <PinModal

@@ -1,23 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-export function useTimer(initialSeconds, { onComplete, onMinuteWarning } = {}) {
+export function useTimer(initialSeconds, { onComplete } = {}) {
   const [remainingSeconds, setRemainingSeconds] = useState(initialSeconds)
   const [isRunning, setIsRunning] = useState(false)
   const endTimeRef = useRef(null)
-  const warnedRef = useRef(false)
   const onCompleteRef = useRef(onComplete)
-  const onMinuteWarningRef = useRef(onMinuteWarning)
 
   useEffect(() => {
     onCompleteRef.current = onComplete
-    onMinuteWarningRef.current = onMinuteWarning
-  }, [onComplete, onMinuteWarning])
+  }, [onComplete])
 
   useEffect(() => {
     setRemainingSeconds(initialSeconds)
     setIsRunning(false)
     endTimeRef.current = null
-    warnedRef.current = false
   }, [initialSeconds])
 
   useEffect(() => {
@@ -29,11 +25,6 @@ export function useTimer(initialSeconds, { onComplete, onMinuteWarning } = {}) {
 
       const nextRemaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000))
       setRemainingSeconds(nextRemaining)
-
-      if (nextRemaining <= 60 && !warnedRef.current) {
-        warnedRef.current = true
-        onMinuteWarningRef.current?.()
-      }
 
       if (nextRemaining <= 0) {
         setIsRunning(false)
@@ -65,11 +56,15 @@ export function useTimer(initialSeconds, { onComplete, onMinuteWarning } = {}) {
     else start()
   }, [isRunning, pause, start])
 
-  const reset = useCallback((seconds = initialSeconds) => {
+  const reset = useCallback((seconds = initialSeconds, { autoStart = false } = {}) => {
     setRemainingSeconds(seconds)
-    setIsRunning(false)
-    endTimeRef.current = null
-    warnedRef.current = false
+    if (autoStart) {
+      endTimeRef.current = Date.now() + seconds * 1000
+      setIsRunning(true)
+    } else {
+      setIsRunning(false)
+      endTimeRef.current = null
+    }
   }, [initialSeconds])
 
   const adjustSeconds = useCallback((delta) => {
@@ -81,9 +76,24 @@ export function useTimer(initialSeconds, { onComplete, onMinuteWarning } = {}) {
       if (isRunning) {
         endTimeRef.current = Date.now() + next * 1000
       }
-      if (next > 60) warnedRef.current = false
       return next
     })
+  }, [isRunning])
+
+  const setSeconds = useCallback((seconds) => {
+    const next = Math.max(0, Math.round(seconds))
+    setRemainingSeconds(next)
+
+    if (next <= 0) {
+      setIsRunning(false)
+      endTimeRef.current = null
+      onCompleteRef.current?.()
+      return
+    }
+
+    if (isRunning) {
+      endTimeRef.current = Date.now() + next * 1000
+    }
   }, [isRunning])
 
   return {
@@ -94,6 +104,7 @@ export function useTimer(initialSeconds, { onComplete, onMinuteWarning } = {}) {
     toggle,
     reset,
     adjustSeconds,
+    setSeconds,
   }
 }
 
