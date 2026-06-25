@@ -267,6 +267,7 @@ select {
 }
 
 .memo-panel__action-btn:hover,
+.memo-panel__action-btn.is-active,
 .memo-panel__action-btn--primary {
   background: rgba(200, 169, 107, 0.12);
 }

@@ -10,6 +10,7 @@ const MEMO_COLORS = [
 
 export default function MemoPanel({
   memo,
+  open,
   editing,
   fontSize,
   color,
@@ -17,6 +18,8 @@ export default function MemoPanel({
   onFontSizeChange,
   onColorChange,
 }) {
+  if (!open) return null
+
   const canDecrease = fontSize > MEMO_STYLE.fontSizeMin
   const canIncrease = fontSize < MEMO_STYLE.fontSizeMax
   const hasMemo = memo.trim().length > 0

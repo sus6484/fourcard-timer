@@ -51,7 +51,7 @@ function defaultGlobalGames() {
 }
 
 const MEMO_FONT_SIZE_MIN = 18
-const MEMO_FONT_SIZE_MAX = 48
+const MEMO_FONT_SIZE_MAX = 100
 const MEMO_FONT_SIZE_STEP = 2
 const DEFAULT_MEMO_COLOR = '#c8a96b'
 
