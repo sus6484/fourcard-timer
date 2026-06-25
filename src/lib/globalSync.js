@@ -84,7 +84,7 @@ export async function fetchGlobalFromCloud() {
 
   return {
     globalGames: Array.isArray(data.globalGames) ? data.globalGames : [],
-    adminPin: typeof data.adminPin === 'string' ? data.adminPin : '0919',
+    adminPin: typeof data.adminPin === 'string' && data.adminPin !== '0000' ? data.adminPin : '0919',
     updatedAt: data.updatedAt ?? null,
   }
 }

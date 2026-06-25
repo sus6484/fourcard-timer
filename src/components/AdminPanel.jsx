@@ -30,10 +30,16 @@ export default function AdminPanel({
 }) {
   const [draft, setDraft] = useState(null)
   const [bulkMinutes, setBulkMinutes] = useState(8)
+  const [draggingIndex, setDraggingIndex] = useState(null)
+  const [dragOverIndex, setDragOverIndex] = useState(null)
   const savedSnapshot = useRef('')
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      setDraggingIndex(null)
+      setDragOverIndex(null)
+      return
+    }
     const nextDraft = createDraft({ games, activeGameId, adminPin })
     setDraft(nextDraft)
     savedSnapshot.current = JSON.stringify(nextDraft)
@@ -110,6 +116,67 @@ export default function AdminPanel({
       levels: normalizeScheduleLevels(game.levels.filter((_, levelIndex) => levelIndex !== index)),
     }))
   }
+
+  const reorderLevels = (fromIndex, toIndex) => {
+    if (fromIndex === toIndex) return
+    updateActiveGame((game) => {
+      const levels = [...game.levels]
+      const [moved] = levels.splice(fromIndex, 1)
+      levels.splice(toIndex, 0, moved)
+      return { ...game, levels: normalizeScheduleLevels(levels) }
+    })
+  }
+
+  const handleDragStart = (event, index) => {
+    setDraggingIndex(index)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(index))
+  }
+
+  const handleDragOver = (event, index) => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    if (draggingIndex !== null && draggingIndex !== index) {
+      setDragOverIndex(index)
+    }
+  }
+
+  const handleDrop = (event, toIndex) => {
+    event.preventDefault()
+    const fromIndex = draggingIndex ?? Number(event.dataTransfer.getData('text/plain'))
+    if (!Number.isNaN(fromIndex) && fromIndex !== toIndex) {
+      reorderLevels(fromIndex, toIndex)
+    }
+    setDraggingIndex(null)
+    setDragOverIndex(null)
+  }
+
+  const handleDragEnd = () => {
+    setDraggingIndex(null)
+    setDragOverIndex(null)
+  }
+
+  const levelRowClassName = (index, isBreak) => {
+    const classes = ['admin-level-row']
+    if (isBreak) classes.push('admin-level-row--break')
+    if (draggingIndex === index) classes.push('admin-level-row--dragging')
+    if (dragOverIndex === index) classes.push('admin-level-row--drag-over')
+    return classes.join(' ')
+  }
+
+  const dragHandle = (index) => (
+    <button
+      type="button"
+      className="admin-level-row__drag"
+      draggable
+      aria-label="순서 변경"
+      title="드래그하여 순서 변경"
+      onDragStart={(event) => handleDragStart(event, index)}
+      onDragEnd={handleDragEnd}
+    >
+      ⋮⋮
+    </button>
+  )
 
   const applyBulkMinutes = () => {
     const value = Number(bulkMinutes)
@@ -259,7 +326,18 @@ export default function AdminPanel({
               <div className="admin-levels">
                 {activeGame.levels.map((level, index) => (
                   level.isBreak ? (
-                    <div key={`${activeGame.id}-${index}`} className="admin-level-row admin-level-row--break">
+                    <div
+                      key={`${activeGame.id}-${index}`}
+                      className={levelRowClassName(index, true)}
+                      onDragOver={(event) => handleDragOver(event, index)}
+                      onDrop={(event) => handleDrop(event, index)}
+                      onDragLeave={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget)) {
+                          setDragOverIndex((current) => (current === index ? null : current))
+                        }
+                      }}
+                    >
+                      {dragHandle(index)}
                       <span className="admin-level-row__type">브레이크</span>
                       <label>
                         <span>분</span>
@@ -275,7 +353,18 @@ export default function AdminPanel({
                       </button>
                     </div>
                   ) : (
-                    <div key={`${activeGame.id}-${index}`} className="admin-level-row">
+                    <div
+                      key={`${activeGame.id}-${index}`}
+                      className={levelRowClassName(index, false)}
+                      onDragOver={(event) => handleDragOver(event, index)}
+                      onDrop={(event) => handleDrop(event, index)}
+                      onDragLeave={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget)) {
+                          setDragOverIndex((current) => (current === index ? null : current))
+                        }
+                      }}
+                    >
+                      {dragHandle(index)}
                       <label>
                         <span>Lv</span>
                         <input

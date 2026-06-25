@@ -4,6 +4,7 @@
   --text: #ffffff;
   --gold: #c8a96b;
   --gold-soft: rgba(200, 169, 107, 0.85);
+  --next-value: #c4bfb2;
   --panel-border: rgba(200, 169, 107, 0.55);
   --font: 'Montserrat', sans-serif;
 }
@@ -425,6 +426,7 @@ select {
 }
 
 .next-card__row strong {
+  color: var(--next-value);
   font-size: clamp(24px, 2.8vw, 40px);
   font-weight: 600;
 }
@@ -740,9 +742,41 @@ select {
 
 .admin-level-row {
   display: grid;
-  grid-template-columns: repeat(6, minmax(70px, 1fr)) auto auto;
+  grid-template-columns: auto repeat(6, minmax(70px, 1fr)) auto auto;
   gap: 8px;
   align-items: end;
+  border-radius: 6px;
+  transition: outline-color 0.15s ease, opacity 0.15s ease;
+}
+
+.admin-level-row__drag {
+  align-self: center;
+  padding: 4px 2px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: -0.12em;
+  cursor: grab;
+  touch-action: none;
+}
+
+.admin-level-row__drag:hover {
+  color: var(--gold-soft);
+}
+
+.admin-level-row__drag:active {
+  cursor: grabbing;
+}
+
+.admin-level-row--dragging {
+  opacity: 0.45;
+}
+
+.admin-level-row--drag-over {
+  outline: 1px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .admin-level-row input[type='number'] {
@@ -762,7 +796,7 @@ select {
 }
 
 .admin-level-row--break {
-  grid-template-columns: minmax(72px, auto) minmax(72px, 1fr) auto;
+  grid-template-columns: auto minmax(72px, auto) minmax(72px, 1fr) auto;
 }
 
 .admin-level-row__type {

@@ -62,11 +62,17 @@ const MEMO_FONT_SIZE_MIN = 18
 const MEMO_FONT_SIZE_MAX = 100
 const MEMO_FONT_SIZE_STEP = 2
 const DEFAULT_MEMO_COLOR = '#c8a96b'
+const DEFAULT_ADMIN_PIN = '0919'
+
+function normalizeAdminPin(pin) {
+  if (pin === '0000') return DEFAULT_ADMIN_PIN
+  return typeof pin === 'string' && pin.length === 4 ? pin : DEFAULT_ADMIN_PIN
+}
 
 const defaultState = () => ({
   globalGames: defaultGlobalGames(),
   activeGlobalGameId: DEFAULT_GAMES[0].id,
-  adminPin: '0919',
+  adminPin: DEFAULT_ADMIN_PIN,
   screenMemo: '',
   memoFontSize: 30,
   memoColor: DEFAULT_MEMO_COLOR,
@@ -81,7 +87,7 @@ function migrateLegacy(raw) {
   return {
     globalGames: games,
     activeGlobalGameId: raw.activeGameId ?? games[0].id,
-    adminPin: raw.adminPin ?? '0919',
+    adminPin: normalizeAdminPin(raw.adminPin),
   }
 }
 
@@ -100,7 +106,7 @@ function normalizeState(raw) {
   const state = {
     globalGames,
     activeGlobalGameId,
-    adminPin: source.adminPin ?? '0919',
+    adminPin: normalizeAdminPin(source.adminPin),
     screenMemo: typeof source.screenMemo === 'string' ? source.screenMemo : '',
     memoFontSize: clampMemoFontSize(source.memoFontSize),
     memoColor: sanitizeMemoColor(source.memoColor),
@@ -192,7 +198,10 @@ export function applyRemoteGlobalSettings(localState, remote) {
     ...localState,
     globalGames: hasRemoteGames ? remoteGames : localState.globalGames,
     activeGlobalGameId,
-    adminPin: typeof remote?.adminPin === 'string' ? remote.adminPin : localState.adminPin,
+    adminPin:
+      typeof remote?.adminPin === 'string'
+        ? normalizeAdminPin(remote.adminPin)
+        : normalizeAdminPin(localState.adminPin),
     cloudUpdatedAt: remoteUpdatedAt ?? localState.cloudUpdatedAt ?? null,
   })
 }
