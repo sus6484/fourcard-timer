@@ -7,7 +7,7 @@ import { useTimer, useWakeLock } from './hooks/useTimer.js'
 import logoUrl from '../image/logo.png'
 import {
   fetchGlobalFromCloud,
-  getNetworkSyncBlockedReason,
+  isFileProtocol,
   saveGlobalToCloud,
 } from './lib/globalSync.js'
 import { formatAnte, formatBlinds, formatTime } from './lib/presets.js'
@@ -39,12 +39,6 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false
-    const blocked = getNetworkSyncBlockedReason()
-
-    if (blocked) {
-      setGlobalSyncStatus('local')
-      return undefined
-    }
 
     async function syncGlobalOnBoot() {
       setGlobalSyncStatus('loading')
@@ -58,6 +52,10 @@ export default function App() {
         setGlobalSyncStatus('ready')
       } catch (error) {
         if (cancelled) return
+        if (isFileProtocol()) {
+          setGlobalSyncStatus('local')
+          return
+        }
         setGlobalSyncStatus('error')
         setGlobalSyncError(error?.message ?? '전체 게임을 불러오지 못했습니다.')
       }
@@ -205,21 +203,17 @@ export default function App() {
       ? '전체 게임 동기화 중…'
       : globalSyncStatus === 'error'
         ? '전체 게임 동기화 실패'
-        : globalSyncStatus === 'blocked'
-          ? '구글 시트 연동 불가'
-          : ''
-  const syncStatusDetail =
-    globalSyncStatus === 'error' || globalSyncStatus === 'blocked' ? globalSyncError : ''
+        : ''
 
   return (
     <div className="app-shell">
       {syncStatusLabel && (
         <p
-          className={`app-sync-status app-sync-status--${globalSyncStatus === 'blocked' ? 'blocked' : globalSyncStatus === 'error' ? 'error' : globalSyncStatus}`}
+          className={`app-sync-status app-sync-status--${globalSyncStatus === 'error' ? 'error' : globalSyncStatus}`}
           role="status"
         >
           {syncStatusLabel}
-          {syncStatusDetail ? `: ${syncStatusDetail}` : ''}
+          {globalSyncStatus === 'error' && globalSyncError ? `: ${globalSyncError}` : ''}
         </p>
       )}
 

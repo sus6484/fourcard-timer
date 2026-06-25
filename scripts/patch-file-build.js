@@ -4,7 +4,6 @@ import path from 'path'
 const file = path.resolve('release/index.html')
 let html = fs.readFileSync(file, 'utf8')
 
-// release 빌드에는 루트 index.html의 file:// 리다이렉트가 필요 없음
 html = html.replace(/\s*<script>\s*if \(location\.protocol === 'file:'[\s\S]*?<\/script>/g, '')
 
 const scriptStart = html.search(/<script(?: type="module")?(?: crossorigin)?>/)
@@ -33,9 +32,14 @@ const fileRedirectScript = `<script>
 (function () {
   if (location.protocol !== 'file:') return
   var server = 'http://127.0.0.1:4173/'
-  fetch(server, { method: 'HEAD', mode: 'no-cors' })
-    .then(function () { location.replace(server + '?t=' + Date.now()) })
+  var controller = new AbortController()
+  var timer = setTimeout(function () { controller.abort() }, 1500)
+  fetch(server, { signal: controller.signal, cache: 'no-store' })
+    .then(function (response) {
+      if (response.ok) location.replace(server + '?t=' + Date.now())
+    })
     .catch(function () {})
+    .finally(function () { clearTimeout(timer) })
 })()
 </script>`
 

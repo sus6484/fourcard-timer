@@ -15,14 +15,7 @@
     <div id="root"></div>
     <script>
       if (location.protocol === 'file:') {
-        var server = 'http://127.0.0.1:4173/'
-        fetch(server, { method: 'HEAD', mode: 'no-cors' })
-          .then(function () {
-            location.replace(server + '?t=' + Date.now())
-          })
-          .catch(function () {
-            location.replace('release/launcher.html')
-          })
+        window.location.replace('release/index.html')
       }
     </script>
     <script type="module" src="/src/main.jsx"></script>

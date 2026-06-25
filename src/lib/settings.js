@@ -1,6 +1,7 @@
 import { DEFAULT_GAMES } from './presets.js'
 
-const STORAGE_KEY = 'fourcard-timer-settings-v2'
+const STORAGE_KEY = 'fourcard-timer-settings-v3'
+const LEGACY_STORAGE_KEYS = ['fourcard-timer-settings-v2', 'fourcard-timer-settings-v1']
 
 function sanitizeLevel(level, index) {
   if (!level || typeof level !== 'object') {
@@ -104,13 +105,24 @@ export function updateScreenMemo(state, memo) {
   }
 }
 
+function readLegacySettings() {
+  for (const key of LEGACY_STORAGE_KEYS) {
+    const saved = localStorage.getItem(key)
+    if (!saved) continue
+    try {
+      return normalizeState(JSON.parse(saved))
+    } catch {
+      // try next legacy key
+    }
+  }
+  return null
+}
+
 export function loadSettings() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (!saved) {
-      const legacy = localStorage.getItem('fourcard-timer-settings-v1')
-      if (legacy) return normalizeState(JSON.parse(legacy))
-      return defaultState()
+      return readLegacySettings() ?? defaultState()
     }
     return normalizeState(JSON.parse(saved))
   } catch {
@@ -122,14 +134,16 @@ export function applyRemoteGlobalSettings(localState, remote) {
   const remoteGames = Array.isArray(remote?.globalGames) ? remote.globalGames : []
   const hasRemoteGames = remoteGames.length > 0
   const remoteUpdatedAt = typeof remote?.updatedAt === 'string' ? remote.updatedAt : null
-  const localUpdatedAt = typeof localState.cloudUpdatedAt === 'string' ? localState.cloudUpdatedAt : null
-  const shouldApplyGames =
-    hasRemoteGames &&
-    (!localUpdatedAt || !remoteUpdatedAt || remoteUpdatedAt >= localUpdatedAt)
+  const activeGlobalGameId = hasRemoteGames
+    ? localState.globalGames.some((game) => game.id === localState.activeGlobalGameId)
+      ? localState.activeGlobalGameId
+      : remoteGames[0]?.id ?? localState.activeGlobalGameId
+    : localState.activeGlobalGameId
 
   return normalizeState({
     ...localState,
-    globalGames: shouldApplyGames ? remoteGames : localState.globalGames,
+    globalGames: hasRemoteGames ? remoteGames : localState.globalGames,
+    activeGlobalGameId,
     adminPin: typeof remote?.adminPin === 'string' ? remote.adminPin : localState.adminPin,
     cloudUpdatedAt: remoteUpdatedAt ?? localState.cloudUpdatedAt ?? null,
   })

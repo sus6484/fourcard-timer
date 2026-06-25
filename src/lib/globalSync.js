@@ -1,14 +1,13 @@
 export const GLOBAL_SYNC_URL =
   'https://script.google.com/macros/s/AKfycbz2KFZPBv8CjR8_mfJdwJDDPsc_PqyRFmlsXUWvoOALpBnwepUeXYlhb20eyQSka5SU/exec'
 
+const REQUEST_TIMEOUT_MS = 12000
+
 export function isFileProtocol() {
   return typeof window !== 'undefined' && window.location.protocol === 'file:'
 }
 
 export function getNetworkSyncBlockedReason() {
-  if (isFileProtocol()) {
-    return 'file:// 로 열면 구글 시트 동기화를 사용할 수 없습니다. open-timer.bat으로 실행하세요.'
-  }
   return null
 }
 
@@ -39,24 +38,31 @@ async function parseJsonResponse(response) {
 }
 
 async function requestJson(url, options) {
-  const blocked = getNetworkSyncBlockedReason()
-  if (blocked) {
-    throw new Error(blocked)
-  }
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
   let response
   try {
     response = await fetch(url, {
       cache: 'no-store',
       redirect: 'follow',
+      signal: controller.signal,
       ...options,
     })
   } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('구글 시트 응답 시간이 초과되었습니다. 인터넷 연결을 확인하세요.')
+    }
+
     throw new Error(
       error?.message?.includes('Failed to fetch')
-        ? '네트워크 요청이 차단되었습니다. 인터넷 연결과 실행 방법(open-timer.bat / npm run serve:file)을 확인하세요.'
+        ? isFileProtocol()
+          ? '오프라인 모드로 실행 중입니다. 구글 시트 연동은 open-timer.bat 또는 GitHub Pages 링크를 사용하세요.'
+          : '네트워크 요청이 차단되었습니다. 인터넷 연결을 확인하세요.'
         : error?.message ?? '네트워크 요청에 실패했습니다.',
     )
+  } finally {
+    clearTimeout(timeoutId)
   }
 
   if (!response.ok) {
@@ -84,6 +90,10 @@ export async function fetchGlobalFromCloud() {
 }
 
 export async function saveGlobalToCloud({ pin, globalGames, adminPin }) {
+  if (isFileProtocol()) {
+    throw new Error('HTML 파일로 직접 열면 구글 시트에 저장할 수 없습니다. open-timer.bat으로 실행하세요.')
+  }
+
   const payload = { pin, globalGames }
   if (typeof adminPin === 'string') {
     payload.adminPin = adminPin
