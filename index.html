@@ -10,21 +10,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/fourcard-timer/assets/index-DZ7gXGyy.js"></script>
+    <script type="module" crossorigin src="/fourcard-timer/assets/index-CPAYSHW0.js"></script>
     <link rel="stylesheet" crossorigin href="/fourcard-timer/assets/index-BmRgfxiQ.css">
   </head>
   <body>
     <div id="root"></div>
     <script>
       if (location.protocol === 'file:') {
-        var server = 'http://127.0.0.1:4173/'
-        fetch(server, { method: 'HEAD', mode: 'no-cors' })
-          .then(function () {
-            location.replace(server + '?t=' + Date.now())
-          })
-          .catch(function () {
-            location.replace('release/launcher.html')
-          })
+        window.location.replace('release/index.html')
       }
     </script>
   </body>
