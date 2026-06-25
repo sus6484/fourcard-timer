@@ -10,7 +10,7 @@ import {
   isFileProtocol,
   saveGlobalToCloud,
 } from './lib/globalSync.js'
-import { formatAnte, formatBlinds, formatTime } from './lib/presets.js'
+import { formatAnte, formatBlinds, formatTime, getScheduleLabel } from './lib/presets.js'
 import {
   applyRemoteGlobalSettings,
   withCloudUpdatedAt,
@@ -158,8 +158,8 @@ export default function App() {
     setAdminOpen(true)
   }
 
-  const levelLabel = currentLevel?.isBreak ? 'BREAK' : `LEVEL ${currentLevel?.level ?? 1}`
-  const nextLevelLabel = nextLevel?.isBreak ? 'BREAK' : nextLevel ? `LEVEL ${nextLevel.level}` : '—'
+  const levelLabel = getScheduleLabel(levels, levelIndex)
+  const nextLevelLabel = getScheduleLabel(levels, levelIndex + 1)
 
   const handleGlobalAdminSave = async (draft) => {
     setAdminSaving(true)

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { cloneGame, createGame, createLevel, duplicateGame } from '../lib/presets.js'
+import { cloneGame, createBreak, createGame, createLevel, duplicateGame, getPokerLevelNumber, normalizeScheduleLevels } from '../lib/presets.js'
 
-function emptyLevel(levelNumber) {
-  return createLevel(levelNumber, 8, 100, 200)
+function emptyLevel(levels) {
+  const pokerCount = levels.filter((level) => !level.isBreak).length
+  return createLevel(pokerCount + 1, 8, 100, 200)
 }
 
 function cloneGamesList(games) {
@@ -41,8 +42,9 @@ export default function AdminPanel({
   useEffect(() => {
     if (!open || !draft) return
     const game = draft.games.find((g) => g.id === draft.activeGameId) ?? draft.games[0]
-    if (game?.levels?.length) {
-      setBulkMinutes(game.levels[0].minutes)
+    const firstPlayLevel = game?.levels?.find((level) => !level.isBreak)
+    if (firstPlayLevel) {
+      setBulkMinutes(firstPlayLevel.minutes)
     }
   }, [open, draft?.activeGameId, draft?.games])
 
@@ -83,16 +85,29 @@ export default function AdminPanel({
   const addLevel = () => {
     updateActiveGame((game) => ({
       ...game,
-      levels: [...game.levels, emptyLevel(game.levels.length + 1)],
+      levels: normalizeScheduleLevels([...game.levels, emptyLevel(game.levels)]),
     }))
+  }
+
+  const addBreak = () => {
+    updateActiveGame((game) => ({
+      ...game,
+      levels: normalizeScheduleLevels([...game.levels, createBreak(bulkMinutes || 8)]),
+    }))
+  }
+
+  const insertBreakAfter = (index) => {
+    updateActiveGame((game) => {
+      const levels = [...game.levels]
+      levels.splice(index + 1, 0, createBreak(bulkMinutes || 8))
+      return { ...game, levels: normalizeScheduleLevels(levels) }
+    })
   }
 
   const removeLevel = (index) => {
     updateActiveGame((game) => ({
       ...game,
-      levels: game.levels
-        .filter((_, levelIndex) => levelIndex !== index)
-        .map((level, levelIndex) => ({ ...level, level: levelIndex + 1 })),
+      levels: normalizeScheduleLevels(game.levels.filter((_, levelIndex) => levelIndex !== index)),
     }))
   }
 
@@ -115,7 +130,7 @@ export default function AdminPanel({
   }
 
   const handleCreate = () => {
-    const game = createGame(`custom-${Date.now()}`, '새 게임', [emptyLevel(1)], { custom: true })
+    const game = createGame(`custom-${Date.now()}`, '새 게임', [createLevel(1, 8, 100, 200)], { custom: true })
     updateDraft((prev) => ({
       ...prev,
       games: [...prev.games, game],
@@ -217,7 +232,10 @@ export default function AdminPanel({
             <section className="admin-panel__section">
               <div className="admin-panel__row admin-panel__row--between">
                 <h3>레벨 / 블라인드</h3>
-                <button type="button" onClick={addLevel}>레벨 추가</button>
+                <div className="admin-panel__row">
+                  <button type="button" onClick={addLevel}>레벨 추가</button>
+                  <button type="button" onClick={addBreak}>브레이크 추가</button>
+                </div>
               </div>
 
               <div className="admin-level-bulk">
@@ -240,67 +258,79 @@ export default function AdminPanel({
 
               <div className="admin-levels">
                 {activeGame.levels.map((level, index) => (
-                  <div key={`${activeGame.id}-${index}`} className="admin-level-row">
-                    <label>
-                      <span>Lv</span>
-                      <input
-                        type="number"
-                        min="1"
-                        value={level.level}
-                        onChange={(event) => updateLevel(index, 'level', Number(event.target.value))}
-                      />
-                    </label>
-                    <label>
-                      <span>분</span>
-                      <input
-                        type="number"
-                        min="1"
-                        value={level.minutes}
-                        onChange={(event) => updateLevel(index, 'minutes', Number(event.target.value))}
-                      />
-                    </label>
-                    <label>
-                      <span>SB</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={level.smallBlind}
-                        disabled={level.isBreak}
-                        onChange={(event) => updateLevel(index, 'smallBlind', Number(event.target.value))}
-                      />
-                    </label>
-                    <label>
-                      <span>BB</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={level.bigBlind}
-                        disabled={level.isBreak}
-                        onChange={(event) => updateLevel(index, 'bigBlind', Number(event.target.value))}
-                      />
-                    </label>
-                    <label>
-                      <span>Ante</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={level.ante}
-                        disabled={level.isBreak}
-                        onChange={(event) => updateLevel(index, 'ante', Number(event.target.value))}
-                      />
-                    </label>
-                    <label className="admin-level-row__break">
-                      <input
-                        type="checkbox"
-                        checked={level.isBreak}
-                        onChange={(event) => updateLevel(index, 'isBreak', event.target.checked)}
-                      />
-                      <span>브레이크</span>
-                    </label>
-                    <button type="button" onClick={() => removeLevel(index)} disabled={activeGame.levels.length <= 1}>
-                      삭제
-                    </button>
-                  </div>
+                  level.isBreak ? (
+                    <div key={`${activeGame.id}-${index}`} className="admin-level-row admin-level-row--break">
+                      <span className="admin-level-row__type">브레이크</span>
+                      <label>
+                        <span>분</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={level.minutes}
+                          onChange={(event) => updateLevel(index, 'minutes', Number(event.target.value))}
+                        />
+                      </label>
+                      <button type="button" onClick={() => removeLevel(index)} disabled={activeGame.levels.length <= 1}>
+                        삭제
+                      </button>
+                    </div>
+                  ) : (
+                    <div key={`${activeGame.id}-${index}`} className="admin-level-row">
+                      <label>
+                        <span>Lv</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={getPokerLevelNumber(activeGame.levels, index) ?? level.level}
+                          readOnly
+                          tabIndex={-1}
+                          aria-readonly="true"
+                        />
+                      </label>
+                      <label>
+                        <span>분</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={level.minutes}
+                          onChange={(event) => updateLevel(index, 'minutes', Number(event.target.value))}
+                        />
+                      </label>
+                      <label>
+                        <span>SB</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={level.smallBlind}
+                          onChange={(event) => updateLevel(index, 'smallBlind', Number(event.target.value))}
+                        />
+                      </label>
+                      <label>
+                        <span>BB</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={level.bigBlind}
+                          onChange={(event) => updateLevel(index, 'bigBlind', Number(event.target.value))}
+                        />
+                      </label>
+                      <label>
+                        <span>Ante</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={level.ante}
+                          onChange={(event) => updateLevel(index, 'ante', Number(event.target.value))}
+                        />
+                      </label>
+                      <button type="button" onClick={() => insertBreakAfter(index)}>
+                        브레이크
+                      </button>
+                      <button type="button" onClick={() => removeLevel(index)} disabled={activeGame.levels.length <= 1}>
+                        삭제
+                      </button>
+                    </div>
+                  )
                 ))}
               </div>
             </section>

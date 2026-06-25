@@ -1,29 +1,37 @@
-import { DEFAULT_GAMES } from './presets.js'
+import { createBreak, createLevel, DEFAULT_GAMES, normalizeScheduleLevels } from './presets.js'
 
 const STORAGE_KEY = 'fourcard-timer-settings-v3'
 const LEGACY_STORAGE_KEYS = ['fourcard-timer-settings-v2', 'fourcard-timer-settings-v1']
 
-function sanitizeLevel(level, index) {
+function sanitizeLevel(level) {
   if (!level || typeof level !== 'object') {
-    return { level: index + 1, minutes: 8, smallBlind: 100, bigBlind: 200, ante: 0, isBreak: false }
+    return createLevel(1, 8, 100, 200)
+  }
+  if (level.isBreak) {
+    return createBreak(Number(level.minutes) || 8)
   }
   return {
-    level: Number(level.level) || index + 1,
+    isBreak: false,
+    level: Number(level.level) || 1,
     minutes: Number(level.minutes) || 8,
     smallBlind: Number(level.smallBlind) || 0,
     bigBlind: Number(level.bigBlind) || 0,
     ante: Number(level.ante) || 0,
-    isBreak: Boolean(level.isBreak),
   }
+}
+
+function sanitizeLevels(levels) {
+  if (!Array.isArray(levels) || levels.length === 0) {
+    return normalizeScheduleLevels([createLevel(1, 8, 100, 200)])
+  }
+  return normalizeScheduleLevels(levels.map(sanitizeLevel))
 }
 
 function sanitizeGame(game, index) {
   if (!game || typeof game !== 'object') {
     return defaultGlobalGames()[0]
   }
-  const levels = Array.isArray(game.levels) && game.levels.length > 0
-    ? game.levels.map(sanitizeLevel)
-    : [sanitizeLevel(null, 0)]
+  const levels = sanitizeLevels(game.levels)
 
   return {
     id: typeof game.id === 'string' && game.id ? game.id : `game-${index + 1}`,
