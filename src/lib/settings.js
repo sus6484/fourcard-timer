@@ -50,11 +50,18 @@ function defaultGlobalGames() {
   return cloneGames(DEFAULT_GAMES)
 }
 
+const MEMO_FONT_SIZE_MIN = 18
+const MEMO_FONT_SIZE_MAX = 48
+const MEMO_FONT_SIZE_STEP = 2
+const DEFAULT_MEMO_COLOR = '#c8a96b'
+
 const defaultState = () => ({
   globalGames: defaultGlobalGames(),
   activeGlobalGameId: DEFAULT_GAMES[0].id,
   adminPin: '0000',
   screenMemo: '',
+  memoFontSize: 30,
+  memoColor: DEFAULT_MEMO_COLOR,
 })
 
 function migrateLegacy(raw) {
@@ -87,6 +94,8 @@ function normalizeState(raw) {
     activeGlobalGameId,
     adminPin: source.adminPin ?? '0000',
     screenMemo: typeof source.screenMemo === 'string' ? source.screenMemo : '',
+    memoFontSize: clampMemoFontSize(source.memoFontSize),
+    memoColor: sanitizeMemoColor(source.memoColor),
     cloudUpdatedAt: typeof source.cloudUpdatedAt === 'string' ? source.cloudUpdatedAt : null,
   }
 
@@ -103,6 +112,37 @@ export function updateScreenMemo(state, memo) {
     ...state,
     screenMemo: typeof memo === 'string' ? memo : '',
   }
+}
+
+function clampMemoFontSize(value) {
+  const size = Number(value)
+  if (!Number.isFinite(size)) return 30
+  return Math.min(MEMO_FONT_SIZE_MAX, Math.max(MEMO_FONT_SIZE_MIN, Math.round(size)))
+}
+
+function sanitizeMemoColor(value) {
+  return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value) ? value : DEFAULT_MEMO_COLOR
+}
+
+export function updateMemoStyle(state, style) {
+  const next = { ...state }
+
+  if (typeof style?.fontSize === 'number') {
+    next.memoFontSize = clampMemoFontSize(style.fontSize)
+  }
+
+  if (typeof style?.color === 'string') {
+    next.memoColor = sanitizeMemoColor(style.color)
+  }
+
+  return next
+}
+
+export const MEMO_STYLE = {
+  fontSizeMin: MEMO_FONT_SIZE_MIN,
+  fontSizeMax: MEMO_FONT_SIZE_MAX,
+  fontSizeStep: MEMO_FONT_SIZE_STEP,
+  defaultColor: DEFAULT_MEMO_COLOR,
 }
 
 function readLegacySettings() {

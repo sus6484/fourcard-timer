@@ -19,6 +19,7 @@ import {
   saveSettings,
   selectGlobalGame,
   updateScreenMemo,
+  updateMemoStyle,
 } from './lib/settings.js'
 import { playLevelComplete, playLevelWarning } from './lib/sound.js'
 
@@ -85,7 +86,7 @@ export default function App() {
     playLevelWarning(currentLevel?.isBreak)
   }, [currentLevel?.isBreak])
 
-  const { remainingSeconds, isRunning, toggle, reset, adjustSeconds } = useTimer(initialSeconds, {
+  const { remainingSeconds, isRunning, toggle, reset } = useTimer(initialSeconds, {
     onComplete: handleLevelComplete,
     onMinuteWarning: handleMinuteWarning,
   })
@@ -121,10 +122,6 @@ export default function App() {
     }
     if (action === 'toggle') {
       toggle()
-      return
-    }
-    if (action === 'forward') {
-      adjustSeconds(60)
       return
     }
     if (action === 'next') {
@@ -233,7 +230,11 @@ export default function App() {
           <MemoPanel
             open={memoOpen}
             memo={settings.screenMemo}
+            fontSize={settings.memoFontSize}
+            color={settings.memoColor}
             onChange={(value) => persistSettings(updateScreenMemo(settings, value))}
+            onFontSizeChange={(size) => persistSettings(updateMemoStyle(settings, { fontSize: size }))}
+            onColorChange={(value) => persistSettings(updateMemoStyle(settings, { color: value }))}
           />
         </aside>
 

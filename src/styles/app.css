@@ -270,6 +270,76 @@ select {
   margin-top: 10px;
 }
 
+.memo-panel__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.memo-panel__toolbar-label {
+  color: var(--gold-soft);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.memo-panel__size-group,
+.memo-panel__color-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.memo-panel__size-btn {
+  min-width: 34px;
+  border: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--gold);
+  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.memo-panel__size-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.memo-panel__size-value {
+  min-width: 28px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.memo-panel__colors {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.memo-panel__color-btn {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  background: var(--memo-swatch);
+  padding: 0;
+  cursor: pointer;
+}
+
+.memo-panel__color-btn.is-active {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.18);
+}
+
 .timer-screen__memo-rail:not(.is-open) .memo-panel {
   display: none;
 }
@@ -282,7 +352,6 @@ select {
   background: transparent;
   color: var(--gold-soft);
   font-family: var(--font);
-  font-size: 30px;
   line-height: 1.5;
   white-space: pre-wrap;
   resize: none;
