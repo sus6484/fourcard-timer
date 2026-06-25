@@ -355,7 +355,7 @@ export default function AdminPanel({
   )
 }
 
-export function PinModal({ open, onClose, onSubmit, error, title = '관리자 PIN', hint = '처음 사용 시 기본 PIN: 0000' }) {
+export function PinModal({ open, onClose, onSubmit, error, title = '관리자 PIN', hint = '' }) {
   const [pin, setPin] = useState('')
 
   if (!open) return null
@@ -371,14 +371,14 @@ export function PinModal({ open, onClose, onSubmit, error, title = '관리자 PI
         }}
       >
         <h2>{title}</h2>
-        <p className="pin-modal__hint">{hint}</p>
+        {hint ? <p className="pin-modal__hint">{hint}</p> : null}
         <input
           autoFocus
           type="password"
           inputMode="numeric"
           maxLength={4}
           value={pin}
-          placeholder="0000"
+          placeholder="PIN"
           onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
         />
         {error && <p className="pin-modal__error">{error}</p>}

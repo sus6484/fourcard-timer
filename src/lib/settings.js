@@ -66,7 +66,7 @@ const DEFAULT_MEMO_COLOR = '#c8a96b'
 const defaultState = () => ({
   globalGames: defaultGlobalGames(),
   activeGlobalGameId: DEFAULT_GAMES[0].id,
-  adminPin: '0000',
+  adminPin: '0919',
   screenMemo: '',
   memoFontSize: 30,
   memoColor: DEFAULT_MEMO_COLOR,
@@ -81,7 +81,7 @@ function migrateLegacy(raw) {
   return {
     globalGames: games,
     activeGlobalGameId: raw.activeGameId ?? games[0].id,
-    adminPin: raw.adminPin ?? '0000',
+    adminPin: raw.adminPin ?? '0919',
   }
 }
 
@@ -100,7 +100,7 @@ function normalizeState(raw) {
   const state = {
     globalGames,
     activeGlobalGameId,
-    adminPin: source.adminPin ?? '0000',
+    adminPin: source.adminPin ?? '0919',
     screenMemo: typeof source.screenMemo === 'string' ? source.screenMemo : '',
     memoFontSize: clampMemoFontSize(source.memoFontSize),
     memoColor: sanitizeMemoColor(source.memoColor),

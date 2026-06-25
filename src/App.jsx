@@ -328,7 +328,6 @@ export default function App() {
         open={pinOpen}
         error={pinError}
         title="전체 관리자 PIN"
-        hint="전체게임 · 기본 PIN: 0000"
         onClose={() => {
           setPinOpen(false)
           setPinError('')
