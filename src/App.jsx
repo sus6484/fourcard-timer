@@ -288,7 +288,7 @@ export default function App() {
           <img src={logoUrl} alt="" className="timer-screen__watermark-logo" />
         </div>
 
-        <header className="timer-screen__top">
+        <header className={`timer-screen__top${globalMenuOpen ? ' is-menu-open' : ''}`}>
           <div className="timer-screen__level-block">
             <p className="timer-screen__level">{levelLabel}</p>
           </div>

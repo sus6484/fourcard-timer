@@ -113,6 +113,10 @@ select {
   gap: 16px;
 }
 
+.timer-screen__top.is-menu-open {
+  z-index: 50;
+}
+
 .top-game-bar {
   display: flex;
   flex-direction: column;
