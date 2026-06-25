@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FOURCARD Timer 실행</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #000;
+        --text: #f5f5f5;
+        --gold: #c8a96b;
+        --gold-soft: #a68b52;
+        --panel: rgba(255, 255, 255, 0.06);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Montserrat", "Segoe UI", sans-serif;
+      }
+
+      .card {
+        width: min(520px, 100%);
+        padding: 28px 32px;
+        border: 1px solid rgba(200, 169, 107, 0.25);
+        border-radius: 16px;
+        background: var(--panel);
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.5rem;
+        color: var(--gold);
+      }
+
+      p,
+      li {
+        line-height: 1.6;
+        color: rgba(255, 255, 255, 0.82);
+      }
+
+      ol {
+        margin: 16px 0;
+        padding-left: 20px;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 24px;
+      }
+
+      a,
+      button {
+        border: 1px solid rgba(200, 169, 107, 0.35);
+        background: rgba(200, 169, 107, 0.12);
+        color: var(--text);
+        padding: 12px 16px;
+        border-radius: 10px;
+        text-decoration: none;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      a.primary,
+      button.primary {
+        background: rgba(200, 169, 107, 0.22);
+        color: var(--gold);
+        font-weight: 600;
+      }
+
+      .note {
+        margin-top: 18px;
+        font-size: 0.92rem;
+        color: rgba(255, 255, 255, 0.55);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>FOURCARD Timer</h1>
+      <p>구글 시트 동기화는 HTML 파일을 직접 열면 브라우저 보안 정책 때문에 사용할 수 없습니다.</p>
+      <ol>
+        <li>프로젝트 폴더의 <strong>open-timer.bat</strong>을 더블클릭하세요.</li>
+        <li>브라우저가 <strong>http://127.0.0.1:4173/</strong> 으로 자동 실행됩니다.</li>
+      </ol>
+      <div class="actions">
+        <button type="button" class="primary" id="retry-server">로컬 서버 다시 연결</button>
+        <a href="index.html">오프라인으로 계속</a>
+      </div>
+      <p class="note">오프라인 모드는 이 기기에 저장된 설정만 사용하며, 구글 시트와 동기화되지 않습니다.</p>
+    </div>
+    <script>
+      const server = 'http://127.0.0.1:4173/'
+
+      function tryOpenServer() {
+        fetch(server, { method: 'HEAD', mode: 'no-cors' })
+          .then(function () {
+            location.replace(server + '?t=' + Date.now())
+          })
+          .catch(function () {
+            alert('로컬 서버가 아직 실행되지 않았습니다. open-timer.bat을 먼저 실행하세요.')
+          })
+      }
+
+      document.getElementById('retry-server').addEventListener('click', tryOpenServer)
+      tryOpenServer()
+    </script>
+  </body>
+</html>
