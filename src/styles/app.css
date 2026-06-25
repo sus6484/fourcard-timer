@@ -240,7 +240,7 @@ select {
   position: absolute;
   left: clamp(20px, 3vw, 40px);
   top: clamp(88px, 11vw, 128px);
-  width: min(320px, 32vw);
+  width: min(360px, 36vw);
   max-height: min(72vh, calc(100dvh - 200px));
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -251,14 +251,17 @@ select {
 }
 
 .memo-panel__toggle {
+  display: block;
+  width: 100%;
   border: 1px solid var(--panel-border);
   background: rgba(0, 0, 0, 0.65);
   color: var(--gold);
-  padding: 6px 12px;
-  font-size: clamp(12px, 1.1vw, 15px);
+  padding: 8px 12px;
+  font-size: clamp(13px, 1.2vw, 16px);
   font-weight: 600;
   letter-spacing: 0.04em;
   cursor: pointer;
+  text-align: left;
 }
 
 .memo-panel__toggle:hover,
@@ -272,36 +275,40 @@ select {
 
 .memo-panel__toolbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-  margin-bottom: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--panel-border);
-  background: rgba(0, 0, 0, 0.45);
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(200, 169, 107, 0.45);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.72);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
 .memo-panel__toolbar-label {
-  color: var(--gold-soft);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  color: var(--gold);
+  font-size: clamp(12px, 1.1vw, 14px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 
 .memo-panel__size-group,
 .memo-panel__color-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .memo-panel__size-btn {
-  min-width: 34px;
-  border: 1px solid var(--panel-border);
-  background: rgba(0, 0, 0, 0.65);
+  min-width: 42px;
+  min-height: 36px;
+  border: 1px solid rgba(200, 169, 107, 0.45);
+  border-radius: 6px;
+  background: rgba(200, 169, 107, 0.1);
   color: var(--gold);
-  padding: 4px 8px;
-  font-size: 13px;
+  padding: 6px 10px;
+  font-size: clamp(14px, 1.2vw, 16px);
   font-weight: 700;
   cursor: pointer;
 }
@@ -312,23 +319,24 @@ select {
 }
 
 .memo-panel__size-value {
-  min-width: 28px;
+  min-width: 34px;
   color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: clamp(14px, 1.2vw, 16px);
+  font-weight: 700;
   text-align: center;
 }
 
 .memo-panel__colors {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .memo-panel__color-btn {
-  width: 22px;
-  height: 22px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  width: 28px;
+  height: 28px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
   border-radius: 50%;
   background: var(--memo-swatch);
   padding: 0;
@@ -336,8 +344,9 @@ select {
 }
 
 .memo-panel__color-btn.is-active {
-  border-color: var(--text);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.18);
+  border-color: #fff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.24);
+  transform: scale(1.08);
 }
 
 .timer-screen__memo-rail:not(.is-open) .memo-panel {
@@ -697,7 +706,7 @@ select {
 @media (max-width: 900px) {
   .timer-screen__memo-rail {
     top: clamp(72px, 18vw, 104px);
-    width: min(280px, 62vw);
+    width: min(320px, 72vw);
     max-height: min(60vh, calc(100dvh - 240px));
   }
 

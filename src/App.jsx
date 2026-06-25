@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AdminPanel, { PinModal } from './components/AdminPanel.jsx'
 import Controls from './components/Controls.jsx'
-import MemoPanel from './components/MemoPanel.jsx'
+import MemoPanel, { MemoStyleToolbar } from './components/MemoPanel.jsx'
 import TopGameBar from './components/TopGameBar.jsx'
 import { useTimer, useWakeLock } from './hooks/useTimer.js'
 import logoUrl from '../image/logo.png'
@@ -227,14 +227,18 @@ export default function App() {
           >
             메모
           </button>
+          <MemoStyleToolbar
+            fontSize={settings.memoFontSize}
+            color={settings.memoColor}
+            onFontSizeChange={(size) => persistSettings(updateMemoStyle(settings, { fontSize: size }))}
+            onColorChange={(value) => persistSettings(updateMemoStyle(settings, { color: value }))}
+          />
           <MemoPanel
             open={memoOpen}
             memo={settings.screenMemo}
             fontSize={settings.memoFontSize}
             color={settings.memoColor}
             onChange={(value) => persistSettings(updateScreenMemo(settings, value))}
-            onFontSizeChange={(size) => persistSettings(updateMemoStyle(settings, { fontSize: size }))}
-            onColorChange={(value) => persistSettings(updateMemoStyle(settings, { color: value }))}
           />
         </aside>
 
