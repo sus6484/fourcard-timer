@@ -31,7 +31,7 @@ export default function App() {
   const [pinOpen, setPinOpen] = useState(false)
   const [pinError, setPinError] = useState('')
   const [resetConfirm, setResetConfirm] = useState(false)
-  const [memoOpen, setMemoOpen] = useState(false)
+  const [memoEditing, setMemoEditing] = useState(false)
   const [globalSyncStatus, setGlobalSyncStatus] = useState('loading')
   const [globalSyncError, setGlobalSyncError] = useState('')
   const [adminSaveError, setAdminSaveError] = useState('')
@@ -215,20 +215,28 @@ export default function App() {
       )}
 
       <main className="timer-screen">
-        <aside
-          className={`timer-screen__memo-rail${memoOpen ? ' is-open' : ''}`}
-          aria-label="메모"
-        >
-          <button
-            type="button"
-            className={`memo-panel__toggle${memoOpen ? ' is-active' : ''}`}
-            aria-expanded={memoOpen}
-            onClick={() => setMemoOpen((open) => !open)}
-          >
-            메모
-          </button>
+        <aside className="timer-screen__memo-rail" aria-label="메모">
+          <div className="memo-panel__actions">
+            {memoEditing ? (
+              <button
+                type="button"
+                className="memo-panel__action-btn memo-panel__action-btn--primary"
+                onClick={() => setMemoEditing(false)}
+              >
+                완료
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="memo-panel__action-btn"
+                onClick={() => setMemoEditing(true)}
+              >
+                수정
+              </button>
+            )}
+          </div>
           <MemoPanel
-            open={memoOpen}
+            editing={memoEditing}
             memo={settings.screenMemo}
             fontSize={settings.memoFontSize}
             color={settings.memoColor}

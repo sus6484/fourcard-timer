@@ -250,7 +250,12 @@ select {
   scrollbar-color: rgba(200, 169, 107, 0.45) transparent;
 }
 
-.memo-panel__toggle {
+.memo-panel__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.memo-panel__action-btn {
   border: 1px solid var(--panel-border);
   background: rgba(0, 0, 0, 0.65);
   color: var(--gold);
@@ -261,8 +266,8 @@ select {
   cursor: pointer;
 }
 
-.memo-panel__toggle:hover,
-.memo-panel__toggle.is-active {
+.memo-panel__action-btn:hover,
+.memo-panel__action-btn--primary {
   background: rgba(200, 169, 107, 0.12);
 }
 
@@ -345,8 +350,14 @@ select {
   transform: scale(1.08);
 }
 
-.timer-screen__memo-rail:not(.is-open) .memo-panel {
-  display: none;
+.memo-panel__display {
+  margin: 0;
+  width: 100%;
+  font-family: var(--font);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  text-align: left;
+  word-break: break-word;
 }
 
 .memo-panel__input {
