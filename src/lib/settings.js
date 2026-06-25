@@ -1,4 +1,3 @@
-import { cloneBranches, DEFAULT_BRANCHES, normalizeBranches } from './branches.js'
 import { DEFAULT_GAMES } from './presets.js'
 
 const STORAGE_KEY = 'fourcard-timer-settings-v2'
@@ -50,19 +49,10 @@ function defaultGlobalGames() {
   return cloneGames(DEFAULT_GAMES)
 }
 
-function defaultBranchStore() {
-  return {}
-}
-
 const defaultState = () => ({
   globalGames: defaultGlobalGames(),
   activeGlobalGameId: DEFAULT_GAMES[0].id,
   adminPin: '0000',
-  branches: cloneBranches(DEFAULT_BRANCHES),
-  branchStore: defaultBranchStore(),
-  branchCode: null,
-  activeBranchGameId: null,
-  activeSource: 'global',
   screenMemo: '',
 })
 
@@ -76,11 +66,6 @@ function migrateLegacy(raw) {
     globalGames: games,
     activeGlobalGameId: raw.activeGameId ?? games[0].id,
     adminPin: raw.adminPin ?? '0000',
-    branches: normalizeBranches(raw.branches),
-    branchStore: raw.branchStore ?? defaultBranchStore(),
-    branchCode: raw.branchCode ?? null,
-    activeBranchGameId: raw.activeBranchGameId ?? null,
-    activeSource: raw.activeSource ?? 'global',
   }
 }
 
@@ -91,17 +76,6 @@ function normalizeState(raw) {
   if (!source?.globalGames?.length) return defaultState()
 
   const globalGames = sanitizeGames(source.globalGames)
-  const branchStore = source.branchStore && typeof source.branchStore === 'object'
-    ? Object.fromEntries(
-        Object.entries(source.branchStore).map(([code, entry]) => [
-          code,
-          {
-            games: sanitizeGames(entry?.games ?? []),
-            activeGameId: entry?.activeGameId ?? null,
-          },
-        ]),
-      )
-    : defaultBranchStore()
 
   const activeGlobalGameId = globalGames.some((game) => game.id === source.activeGlobalGameId)
     ? source.activeGlobalGameId
@@ -111,12 +85,8 @@ function normalizeState(raw) {
     globalGames,
     activeGlobalGameId,
     adminPin: source.adminPin ?? '0000',
-    branches: normalizeBranches(source.branches),
-    branchStore,
-    branchCode: source.branchCode ?? null,
-    activeBranchGameId: source.activeBranchGameId ?? null,
-    activeSource: source.activeSource === 'branch' ? 'branch' : 'global',
     screenMemo: typeof source.screenMemo === 'string' ? source.screenMemo : '',
+    cloudUpdatedAt: typeof source.cloudUpdatedAt === 'string' ? source.cloudUpdatedAt : null,
   }
 
   if (!state.screenMemo) {
@@ -180,17 +150,7 @@ export function saveSettings(state) {
   }
 }
 
-export function getBranchGames(state) {
-  if (!state.branchCode) return []
-  return state.branchStore[state.branchCode]?.games ?? []
-}
-
 export function getActiveGame(state) {
-  if (state.activeSource === 'branch' && state.branchCode) {
-    const games = getBranchGames(state)
-    const activeId = state.activeBranchGameId ?? games[0]?.id
-    return games.find((game) => game.id === activeId) ?? games[0] ?? getActiveGlobalGame(state)
-  }
   return getActiveGlobalGame(state)
 }
 
@@ -203,16 +163,7 @@ export function getActiveGlobalGame(state) {
 export function selectGlobalGame(state, gameId) {
   return {
     ...state,
-    activeSource: 'global',
     activeGlobalGameId: gameId,
-  }
-}
-
-export function selectBranchGame(state, gameId) {
-  return {
-    ...state,
-    activeSource: 'branch',
-    activeBranchGameId: gameId,
   }
 }
 
@@ -222,59 +173,6 @@ export function updateGlobalGames(state, games, activeGameId = state.activeGloba
     globalGames: games,
     activeGlobalGameId: activeGameId,
   }
-}
-
-export function updateBranchGames(state, games, activeGameId = state.activeBranchGameId) {
-  if (!state.branchCode) return state
-  const branchStore = {
-    ...state.branchStore,
-    [state.branchCode]: {
-      ...state.branchStore[state.branchCode],
-      games,
-    },
-  }
-  return {
-    ...state,
-    branchStore,
-    activeBranchGameId: activeGameId,
-  }
-}
-
-export function loginBranch(state, code) {
-  const normalized = code.trim().toUpperCase()
-  const branch = state.branches[normalized]
-  if (!branch) return { ok: false, error: '등록되지 않은 지점 코드입니다.' }
-
-  const existing = state.branchStore[normalized]
-  const games = existing?.games ?? []
-  const activeBranchGameId = existing?.activeGameId ?? games[0]?.id ?? null
-
-  return {
-    ok: true,
-    state: {
-      ...state,
-      branchCode: normalized,
-      branchStore: {
-        ...state.branchStore,
-        [normalized]: existing ?? { games: [], activeGameId: null },
-      },
-      activeBranchGameId,
-      activeSource: games.length > 0 ? 'branch' : state.activeSource,
-    },
-  }
-}
-
-export function logoutBranch(state) {
-  return {
-    ...state,
-    branchCode: null,
-    activeBranchGameId: null,
-    activeSource: 'global',
-  }
-}
-
-export function updateBranches(state, branches) {
-  return { ...state, branches }
 }
 
 export function resetToDefaults() {

@@ -11,19 +11,27 @@ npm run dev
 
 브라우저에서 `http://localhost:5173` 을 엽니다. 가로(landscape) 화면에 최적화되어 있습니다.
 
-### index.html로 바로 열기
+### 로컬 실행 (구글 시트 연동 포함)
+
+**권장:** Windows에서 **`open-timer.bat`** 더블클릭
+
+- 최신 코드로 자동 빌드
+- `http://127.0.0.1:4173/` 로컬 서버 실행
+- 브라우저 자동 실행 (구글 시트 동기화 가능)
+
+### index.html로 바로 열기 (오프라인)
 
 ```bash
 npm run build:file
 ```
 
-빌드 후 아래 중 하나로 열면 됩니다.
+빌드 후 **`release/index.html`** 을 더블클릭하면 오프라인으로 실행됩니다.
 
-- 프로젝트 폴더의 **`index.html`** 더블클릭 → `release/index.html`로 이동
-- **`release/index.html`** 더블클릭 (바로 열기)
-- Windows: **`open-timer.bat`** 더블클릭 (빌드 없으면 자동 빌드 후 실행)
+- 구글 시트 동기화는 **사용할 수 없습니다** (브라우저 보안 제한)
+- `open-timer.bat`이 이미 실행 중이면 `release/index.html`도 자동으로 로컬 서버 주소로 연결됩니다
+- 프로젝트 루트 **`index.html`** 을 열면 안내 화면(`release/launcher.html`)으로 이동합니다
 
-코드를 수정한 뒤에는 `npm run build:file`을 다시 실행하세요.
+코드를 수정한 뒤에는 `npm run build:file` 또는 `open-timer.bat`을 다시 실행하세요.
 
 ### GitHub Pages (웹 배포)
 
@@ -43,7 +51,6 @@ npm run build:file
 
 ## Phase 2 (예정)
 
-- 지점 코드 로그인
 - Supabase 등 클라우드 동기화 (`src/lib/settings.js`의 `saveSettings` / `loadSettings` 교체)
 
 ## Assets

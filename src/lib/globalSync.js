@@ -7,7 +7,7 @@ export function isFileProtocol() {
 
 export function getNetworkSyncBlockedReason() {
   if (isFileProtocol()) {
-    return 'file:// 로 열면 브라우저가 구글 시트 통신을 차단합니다. open-timer.bat 또는 npm run serve:file 로 실행하세요.'
+    return 'file:// 로 열면 구글 시트 동기화를 사용할 수 없습니다. open-timer.bat으로 실행하세요.'
   }
   return null
 }

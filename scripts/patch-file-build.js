@@ -28,8 +28,22 @@ if (!html.includes(rootMarker)) {
   process.exit(1)
 }
 
+const buildStamp = new Date().toISOString()
+const fileRedirectScript = `<script>
+(function () {
+  if (location.protocol !== 'file:') return
+  var server = 'http://127.0.0.1:4173/'
+  fetch(server, { method: 'HEAD', mode: 'no-cors' })
+    .then(function () { location.replace(server + '?t=' + Date.now()) })
+    .catch(function () {})
+})()
+</script>`
+
 const rootIdx = html.indexOf(rootMarker)
-html = `${html.slice(0, rootIdx + rootMarker.length)}\n  ${appScript}${html.slice(rootIdx + rootMarker.length)}`
+html = `${html.slice(0, rootIdx + rootMarker.length)}
+  <meta name="fourcard-build" content="${buildStamp}" />
+  ${fileRedirectScript}
+  ${appScript}${html.slice(rootIdx + rootMarker.length)}`
 
 fs.writeFileSync(file, html)
-console.log('Patched release/index.html for local file opening')
+console.log(`Patched release/index.html (${buildStamp})`)

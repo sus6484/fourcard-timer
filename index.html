@@ -15,10 +15,14 @@
     <div id="root"></div>
     <script>
       if (location.protocol === 'file:') {
-        var path = location.pathname.replace(/\\/g, '/')
-        if (!path.endsWith('/release/index.html')) {
-          window.location.replace('release/index.html')
-        }
+        var server = 'http://127.0.0.1:4173/'
+        fetch(server, { method: 'HEAD', mode: 'no-cors' })
+          .then(function () {
+            location.replace(server + '?t=' + Date.now())
+          })
+          .catch(function () {
+            location.replace('release/launcher.html')
+          })
       }
     </script>
     <script type="module" src="/src/main.jsx"></script>

@@ -117,22 +117,6 @@ select {
   white-space: nowrap;
 }
 
-.top-game-bar__row--branch .game-selector__trigger,
-.game-selector__trigger--locked {
-  color: var(--gold-soft);
-}
-
-.game-selector__trigger--locked {
-  border: 0;
-  background: transparent;
-  font-size: clamp(16px, 1.6vw, 22px);
-  font-weight: 500;
-  padding: 8px 0;
-  cursor: pointer;
-  text-align: left;
-  opacity: 0.75;
-}
-
 .top-game-bar__settings {
   flex-shrink: 0;
   border: 1px solid var(--panel-border);
@@ -147,33 +131,6 @@ select {
 
 .top-game-bar__settings:hover {
   background: rgba(200, 169, 107, 0.12);
-}
-
-.top-game-bar__branch-meta {
-  grid-column: 2 / -1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: -2px;
-}
-
-.top-game-bar__branch-tag {
-  color: var(--gold-soft);
-  font-size: clamp(11px, 1vw, 13px);
-  letter-spacing: 0.06em;
-}
-
-.top-game-bar__logout {
-  border: 0;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 12px;
-  padding: 0;
-  cursor: pointer;
-}
-
-.top-game-bar__logout:hover {
-  color: var(--text);
 }
 
 .game-selector {
@@ -444,10 +401,6 @@ select {
   z-index: 100;
 }
 
-.admin-overlay--stack {
-  z-index: 110;
-}
-
 .admin-panel,
 .pin-modal {
   width: min(960px, 100%);
@@ -489,36 +442,6 @@ select {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.admin-panel__back {
-  display: block;
-  margin: 0 0 8px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--gold-soft);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.admin-panel__nav-btn {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 14px 16px;
-  text-align: left;
-}
-
-.admin-panel__nav-btn-label {
-  font-weight: 600;
-  color: var(--text);
-}
-
-.admin-panel__nav-btn-meta {
-  color: var(--gold-soft);
-  font-size: 13px;
 }
 
 .admin-panel__save,
@@ -679,36 +602,11 @@ select {
   width: min(360px, 100%);
 }
 
-.pin-modal--wide {
-  width: min(400px, 100%);
-}
-
 .admin-panel__note {
   margin: 0;
   color: rgba(255, 255, 255, 0.55);
   font-size: 13px;
   line-height: 1.5;
-}
-
-.admin-branches {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.admin-branch-row {
-  display: grid;
-  grid-template-columns: minmax(90px, 1fr) minmax(120px, 1.5fr) minmax(80px, 1fr) auto;
-  gap: 8px;
-  align-items: end;
-}
-
-.admin-branch-row label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--gold-soft);
 }
 
 .pin-modal__error {

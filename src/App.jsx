@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import AdminPanel, { BranchLoginModal, PinModal } from './components/AdminPanel.jsx'
+import AdminPanel, { PinModal } from './components/AdminPanel.jsx'
 import Controls from './components/Controls.jsx'
 import MemoPanel from './components/MemoPanel.jsx'
 import TopGameBar from './components/TopGameBar.jsx'
@@ -15,14 +15,9 @@ import {
   applyRemoteGlobalSettings,
   withCloudUpdatedAt,
   getActiveGame,
-  getBranchGames,
   loadSettings,
-  loginBranch,
-  logoutBranch,
   saveSettings,
-  selectBranchGame,
   selectGlobalGame,
-  updateBranchGames,
   updateScreenMemo,
 } from './lib/settings.js'
 import { playLevelComplete, playLevelWarning } from './lib/sound.js'
@@ -31,13 +26,9 @@ export default function App() {
   const [settings, setSettings] = useState(loadSettings)
   const [levelIndex, setLevelIndex] = useState(0)
   const [globalMenuOpen, setGlobalMenuOpen] = useState(false)
-  const [branchMenuOpen, setBranchMenuOpen] = useState(false)
   const [adminOpen, setAdminOpen] = useState(false)
-  const [adminTier, setAdminTier] = useState('global')
   const [pinOpen, setPinOpen] = useState(false)
-  const [branchLoginOpen, setBranchLoginOpen] = useState(false)
   const [pinError, setPinError] = useState('')
-  const [branchLoginError, setBranchLoginError] = useState('')
   const [resetConfirm, setResetConfirm] = useState(false)
   const [memoOpen, setMemoOpen] = useState(false)
   const [globalSyncStatus, setGlobalSyncStatus] = useState('loading')
@@ -51,8 +42,7 @@ export default function App() {
     const blocked = getNetworkSyncBlockedReason()
 
     if (blocked) {
-      setGlobalSyncStatus('blocked')
-      setGlobalSyncError(blocked)
+      setGlobalSyncStatus('local')
       return undefined
     }
 
@@ -79,13 +69,11 @@ export default function App() {
     }
   }, [])
 
-  const branchGames = useMemo(() => getBranchGames(settings), [settings])
   const activeGame = useMemo(() => getActiveGame(settings), [settings])
   const levels = activeGame?.levels ?? []
   const currentLevel = levels[levelIndex] ?? levels[0]
   const nextLevel = levels[levelIndex + 1] ?? null
   const initialSeconds = (currentLevel?.minutes ?? 0) * 60
-  const branchInfo = settings.branchCode ? settings.branches[settings.branchCode] : null
 
   const handleLevelComplete = useCallback(() => {
     if (!activeGame) return
@@ -126,13 +114,6 @@ export default function App() {
   const selectGlobal = (gameId) => {
     persistSettings(selectGlobalGame(settings, gameId))
     setGlobalMenuOpen(false)
-    setBranchMenuOpen(false)
-  }
-
-  const selectBranch = (gameId) => {
-    persistSettings(selectBranchGame(settings, gameId))
-    setBranchMenuOpen(false)
-    setGlobalMenuOpen(false)
   }
 
   const handleControl = (action) => {
@@ -163,22 +144,6 @@ export default function App() {
   }
 
   const openGlobalSettings = () => {
-    setAdminTier('global')
-    setPinError('')
-    setPinOpen(true)
-  }
-
-  const openBranchLogin = () => {
-    setBranchLoginError('')
-    setBranchLoginOpen(true)
-  }
-
-  const openBranchSettings = () => {
-    setAdminTier('branch')
-    if (!settings.branchCode) {
-      openBranchLogin()
-      return
-    }
     setPinError('')
     setPinOpen(true)
   }
@@ -194,48 +159,6 @@ export default function App() {
     setAdminSaveError('')
     setAdminOpen(true)
   }
-
-  const handleBranchPinSubmit = (pin) => {
-    const branchPin = settings.branches[settings.branchCode]?.pin
-    if (pin !== branchPin) {
-      setPinError('지점 PIN이 올바르지 않습니다.')
-      return
-    }
-    setPinOpen(false)
-    setPinError('')
-    setAdminOpen(true)
-  }
-
-  const handleBranchLogin = (code, pin) => {
-    const normalized = code.trim().toUpperCase()
-    const branch = settings.branches[normalized]
-    if (!branch) {
-      setBranchLoginError('등록되지 않은 지점 코드입니다.')
-      return
-    }
-    if (pin !== branch.pin) {
-      setBranchLoginError('지점 PIN이 올바르지 않습니다.')
-      return
-    }
-
-    const result = loginBranch(settings, normalized)
-    if (!result.ok) {
-      setBranchLoginError(result.error)
-      return
-    }
-
-    persistSettings(result.state)
-    setBranchLoginOpen(false)
-    setBranchLoginError('')
-    setPinError('')
-    setPinOpen(true)
-  }
-
-  const adminGames = adminTier === 'global' ? settings.globalGames : branchGames
-  const adminActiveGameId =
-    adminTier === 'global'
-      ? settings.activeGlobalGameId
-      : settings.activeBranchGameId ?? branchGames[0]?.id
 
   const levelLabel = currentLevel?.isBreak ? 'BREAK' : `LEVEL ${currentLevel?.level ?? 1}`
   const nextLevelLabel = nextLevel?.isBreak ? 'BREAK' : nextLevel ? `LEVEL ${nextLevel.level}` : '—'
@@ -258,7 +181,6 @@ export default function App() {
             globalGames: draft.games,
             activeGlobalGameId: draft.activeGameId,
             adminPin: draft.adminPin,
-            branches: draft.branches,
           },
           result.updatedAt,
         ),
@@ -276,26 +198,6 @@ export default function App() {
     } finally {
       setAdminSaving(false)
     }
-  }
-
-  const handleBranchAdminSave = (draft) => {
-    if (!settings.branchCode) return
-    persistSettings(
-      updateBranchGames(
-        {
-          ...settings,
-          branches: {
-            ...settings.branches,
-            [settings.branchCode]: {
-              ...settings.branches[settings.branchCode],
-              pin: draft.adminPin,
-            },
-          },
-        },
-        draft.games,
-        draft.activeGameId,
-      ),
-    )
   }
 
   const syncStatusLabel =
@@ -354,25 +256,9 @@ export default function App() {
             globalGames={settings.globalGames}
             activeGlobalGameId={settings.activeGlobalGameId}
             globalMenuOpen={globalMenuOpen}
-            onToggleGlobalMenu={() => {
-              setGlobalMenuOpen((open) => !open)
-              setBranchMenuOpen(false)
-            }}
+            onToggleGlobalMenu={() => setGlobalMenuOpen((open) => !open)}
             onSelectGlobalGame={selectGlobal}
             onOpenGlobalSettings={openGlobalSettings}
-            branchGames={branchGames}
-            activeBranchGameId={settings.activeBranchGameId}
-            branchMenuOpen={branchMenuOpen}
-            onToggleBranchMenu={() => {
-              setBranchMenuOpen((open) => !open)
-              setGlobalMenuOpen(false)
-            }}
-            onSelectBranchGame={selectBranch}
-            onOpenBranchSettings={openBranchSettings}
-            onOpenBranchLogin={openBranchLogin}
-            branchCode={settings.branchCode}
-            branchName={branchInfo?.name}
-            onBranchLogout={() => persistSettings(logoutBranch(settings))}
           />
         </header>
 
@@ -415,43 +301,25 @@ export default function App() {
       <PinModal
         open={pinOpen}
         error={pinError}
-        title={adminTier === 'global' ? '전체 관리자 PIN' : '지점 관리 PIN'}
-        hint={adminTier === 'global' ? '전체게임 · 기본 PIN: 0000' : `지점게임 · ${settings.branchCode ?? ''}`}
+        title="전체 관리자 PIN"
+        hint="전체게임 · 기본 PIN: 0000"
         onClose={() => {
           setPinOpen(false)
           setPinError('')
         }}
-        onSubmit={adminTier === 'global' ? handleGlobalPinSubmit : handleBranchPinSubmit}
-      />
-
-      <BranchLoginModal
-        open={branchLoginOpen}
-        error={branchLoginError}
-        onClose={() => {
-          setBranchLoginOpen(false)
-          setBranchLoginError('')
-        }}
-        onSubmit={handleBranchLogin}
+        onSubmit={handleGlobalPinSubmit}
       />
 
       <AdminPanel
         open={adminOpen}
-        tier={adminTier}
-        games={adminGames}
-        activeGameId={adminActiveGameId}
-        adminPin={adminTier === 'global' ? settings.adminPin : settings.branches[settings.branchCode]?.pin ?? '0000'}
-        branches={settings.branches}
-        branchCode={settings.branchCode}
+        games={settings.globalGames}
+        activeGameId={settings.activeGlobalGameId}
+        adminPin={settings.adminPin}
         onClose={() => {
           setAdminOpen(false)
           setAdminSaveError('')
         }}
-        onSave={(draft) => {
-          if (adminTier === 'global') {
-            return handleGlobalAdminSave(draft)
-          }
-          handleBranchAdminSave(draft)
-        }}
+        onSave={handleGlobalAdminSave}
         saveError={adminSaveError}
         saving={adminSaving}
       />
