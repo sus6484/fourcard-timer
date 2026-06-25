@@ -134,7 +134,9 @@ export default function App() {
         setResetConfirm(true)
         return
       }
-      reset(initialSeconds)
+      const firstLevelSeconds = (levels[0]?.minutes ?? 0) * 60
+      setLevelIndex(0)
+      reset(firstLevelSeconds)
       setResetConfirm(false)
     }
   }
@@ -316,7 +318,7 @@ export default function App() {
               <strong>{formatAnte(nextLevel)}</strong>
             </div>
             <Controls isRunning={isRunning} onAction={handleControl} />
-            {resetConfirm && <p className="reset-hint">한 번 더 누르면 리셋됩니다</p>}
+            {resetConfirm && <p className="reset-hint">한 번 더 누르면 LEVEL 1부터 리셋됩니다</p>}
           </div>
         </footer>
 
