@@ -6,7 +6,7 @@ const repoName = 'fourcard-timer'
 
 export default defineConfig(({ mode }) => ({
   plugins: [react(), ...(mode === 'file' ? [viteSingleFile()] : [])],
-  base: mode === 'ghpages' ? `/${repoName}/` : mode === 'file' ? './' : '/',
+  base: mode === 'file' ? './' : '/',
   preview: {
     host: '127.0.0.1',
     port: 4173,
