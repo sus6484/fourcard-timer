@@ -17,7 +17,7 @@ html,
 body,
 #root {
   width: 100%;
-  min-height: 100%;
+  height: 100%;
   margin: 0;
 }
 
@@ -25,8 +25,7 @@ body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 button,
@@ -38,8 +37,7 @@ select {
 
 .app-shell {
   width: 100%;
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100%;
 }
 
 .boot-error {
@@ -79,15 +77,14 @@ select {
 .timer-screen {
   position: relative;
   width: 100%;
-  min-height: 100%;
+  height: 100%;
   min-height: 100vh;
   min-height: 100dvh;
   padding: clamp(16px, 2vw, 28px) clamp(20px, 3vw, 40px);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: clamp(18px, 2.4vh, 28px);
+  grid-template-rows: auto 1fr auto;
   background: var(--bg);
-  overflow: clip;
+  overflow: hidden;
 }
 
 .timer-screen__watermark {
@@ -111,7 +108,7 @@ select {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, auto);
+  grid-template-columns: 1fr auto;
   align-items: start;
   gap: 16px;
 }
@@ -125,13 +122,12 @@ select {
   flex-direction: column;
   gap: 10px;
   justify-self: end;
-  width: min(100%, 560px);
-  min-width: min(320px, 42vw);
+  min-width: min(420px, 42vw);
 }
 
 .top-game-bar__row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
 }
@@ -174,11 +170,6 @@ select {
   padding: 8px 0;
   cursor: pointer;
   text-align: left;
-  width: 100%;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .game-selector__backdrop {
@@ -383,24 +374,21 @@ select {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 0;
-  padding-block: clamp(8px, 2vh, 16px);
 }
 
 .timer-screen__time {
   margin: 0;
-  font-size: clamp(72px, min(16vw, 20vh), 220px);
+  font-size: clamp(96px, 18vw, 220px);
   font-weight: 600;
   letter-spacing: 0.06em;
   line-height: 1;
-  text-align: center;
 }
 
 .timer-screen__bottom {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 1fr 1fr;
   grid-template-rows: auto auto;
   gap: 24px;
   align-items: end;
@@ -417,13 +405,12 @@ select {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  min-width: 0;
 }
 
 .info-card__row,
 .next-card__row {
   display: grid;
-  grid-template-columns: minmax(88px, 120px) minmax(0, 1fr);
+  grid-template-columns: 120px 1fr;
   align-items: baseline;
   gap: 12px;
   padding-bottom: 14px;
@@ -456,7 +443,6 @@ select {
 .controls {
   display: flex;
   justify-content: flex-end;
-  flex-wrap: wrap;
   gap: clamp(8px, 1.2vw, 16px);
   margin-top: 8px;
 }
@@ -484,7 +470,6 @@ select {
 .controls__adjust {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: clamp(6px, 0.8vw, 10px);
 }
 
@@ -517,7 +502,6 @@ select {
 .time-scrubber {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: clamp(10px, 1.2vw, 16px);
   width: 100%;
   padding: 8px 12px;
@@ -892,7 +876,6 @@ select {
   .top-game-bar {
     justify-self: stretch;
     min-width: 0;
-    width: 100%;
   }
 
   .timer-screen__level-block,
@@ -906,87 +889,6 @@ select {
 
   .admin-level-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 1280px), (max-height: 900px) {
-  .timer-screen {
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
-
-  .timer-screen__memo-rail {
-    position: relative;
-    inset: auto;
-    width: min(100%, 560px);
-    max-height: none;
-    justify-self: start;
-    padding-right: 0;
-    overflow: visible;
-  }
-
-  .timer-screen__clock {
-    padding-block: 0;
-  }
-
-  .timer-screen__time {
-    font-size: clamp(64px, min(13vw, 16vh), 180px);
-  }
-}
-
-@media (max-width: 1100px), (max-height: 760px) {
-  .timer-screen {
-    gap: 16px;
-  }
-
-  .timer-screen__top,
-  .timer-screen__bottom {
-    grid-template-columns: 1fr;
-  }
-
-  .timer-screen__level-block,
-  .top-game-bar,
-  .next-card,
-  .timer-screen__scrubber {
-    justify-self: stretch;
-    width: 100%;
-    min-width: 0;
-  }
-
-  .next-card {
-    justify-self: stretch;
-  }
-
-  .controls,
-  .reset-hint {
-    justify-content: flex-start;
-    text-align: left;
-  }
-
-  .timer-screen__time {
-    font-size: clamp(60px, min(12vw, 14vh), 150px);
-  }
-}
-
-@media (max-width: 700px) {
-  .timer-screen {
-    padding-inline: 16px;
-  }
-
-  .top-game-bar__row,
-  .info-card__row,
-  .next-card__row {
-    grid-template-columns: 1fr;
-    gap: 6px;
-  }
-
-  .top-game-bar__settings {
-    justify-self: start;
-  }
-
-  .controls__button {
-    width: 44px;
-    height: 44px;
   }
 }
 
