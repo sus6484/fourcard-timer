@@ -5,6 +5,7 @@ import TimeScrubber from './components/TimeScrubber.jsx'
 import MemoPanel from './components/MemoPanel.jsx'
 import TopGameBar from './components/TopGameBar.jsx'
 import { useTimer, useWakeLock } from './hooks/useTimer.js'
+import { DESIGN_HEIGHT, DESIGN_WIDTH, useFitScale } from './hooks/useFitScale.js'
 import logoUrl from '../image/logo.png'
 import {
   fetchGlobalFromCloud,
@@ -220,161 +221,174 @@ export default function App() {
         ? '전체 게임 동기화 실패'
         : ''
 
+  const stageScale = useFitScale(DESIGN_WIDTH, DESIGN_HEIGHT)
+
   return (
     <div className="app-shell">
-      {syncStatusLabel && (
-        <p
-          className={`app-sync-status app-sync-status--${globalSyncStatus === 'error' ? 'error' : globalSyncStatus}`}
-          role="status"
+      <div className="stage-viewport">
+        <div
+          className="stage-canvas"
+          style={{
+            width: DESIGN_WIDTH,
+            height: DESIGN_HEIGHT,
+            transform: `scale(${stageScale})`,
+          }}
         >
-          {syncStatusLabel}
-          {globalSyncStatus === 'error' && globalSyncError ? `: ${globalSyncError}` : ''}
-        </p>
-      )}
-
-      <main className="timer-screen">
-        <aside
-          className={`timer-screen__memo-rail${memoOpen ? ' is-open' : ''}`}
-          aria-label="메모"
-        >
-          <div className="memo-panel__actions">
-            <button
-              type="button"
-              className={`memo-panel__action-btn${memoOpen ? ' is-active' : ''}`}
-              aria-expanded={memoOpen}
-              onClick={() => {
-                setMemoOpen((open) => {
-                  if (open) setMemoEditing(false)
-                  return !open
-                })
-              }}
+          {syncStatusLabel && (
+            <p
+              className={`app-sync-status app-sync-status--${globalSyncStatus === 'error' ? 'error' : globalSyncStatus}`}
+              role="status"
             >
-              {memoOpen ? '닫기' : '메모'}
-            </button>
-            {memoEditing ? (
-              <button
-                type="button"
-                className="memo-panel__action-btn memo-panel__action-btn--primary"
-                onClick={() => setMemoEditing(false)}
-              >
-                완료
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="memo-panel__action-btn"
-                onClick={() => {
-                  setMemoOpen(true)
-                  setMemoEditing(true)
-                }}
-              >
-                수정
-              </button>
-            )}
-          </div>
-          <MemoPanel
-            open={memoOpen}
-            editing={memoEditing}
-            memo={settings.screenMemo}
-            fontSize={settings.memoFontSize}
-            color={settings.memoColor}
-            onChange={(value) => persistSettings(updateScreenMemo(settings, value))}
-            onFontSizeChange={(size) => persistSettings(updateMemoStyle(settings, { fontSize: size }))}
-            onColorChange={(value) => persistSettings(updateMemoStyle(settings, { color: value }))}
-          />
-        </aside>
+              {syncStatusLabel}
+              {globalSyncStatus === 'error' && globalSyncError ? `: ${globalSyncError}` : ''}
+            </p>
+          )}
 
-        <div className="timer-screen__watermark" aria-hidden="true">
-          <img src={logoUrl} alt="" className="timer-screen__watermark-logo" />
+          <main className="timer-screen">
+            <aside
+              className={`timer-screen__memo-rail${memoOpen ? ' is-open' : ''}`}
+              aria-label="메모"
+            >
+              <div className="memo-panel__actions">
+                <button
+                  type="button"
+                  className={`memo-panel__action-btn${memoOpen ? ' is-active' : ''}`}
+                  aria-expanded={memoOpen}
+                  onClick={() => {
+                    setMemoOpen((open) => {
+                      if (open) setMemoEditing(false)
+                      return !open
+                    })
+                  }}
+                >
+                  {memoOpen ? '닫기' : '메모'}
+                </button>
+                {memoEditing ? (
+                  <button
+                    type="button"
+                    className="memo-panel__action-btn memo-panel__action-btn--primary"
+                    onClick={() => setMemoEditing(false)}
+                  >
+                    완료
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="memo-panel__action-btn"
+                    onClick={() => {
+                      setMemoOpen(true)
+                      setMemoEditing(true)
+                    }}
+                  >
+                    수정
+                  </button>
+                )}
+              </div>
+              <MemoPanel
+                open={memoOpen}
+                editing={memoEditing}
+                memo={settings.screenMemo}
+                fontSize={settings.memoFontSize}
+                color={settings.memoColor}
+                onChange={(value) => persistSettings(updateScreenMemo(settings, value))}
+                onFontSizeChange={(size) => persistSettings(updateMemoStyle(settings, { fontSize: size }))}
+                onColorChange={(value) => persistSettings(updateMemoStyle(settings, { color: value }))}
+              />
+            </aside>
+
+            <div className="timer-screen__watermark" aria-hidden="true">
+              <img src={logoUrl} alt="" className="timer-screen__watermark-logo" />
+            </div>
+
+            <header className={`timer-screen__top${globalMenuOpen ? ' is-menu-open' : ''}`}>
+              <div className="timer-screen__level-block">
+                <p className="timer-screen__level">{levelLabel}</p>
+              </div>
+
+              <TopGameBar
+                globalGames={settings.globalGames}
+                activeGlobalGameId={settings.activeGlobalGameId}
+                globalMenuOpen={globalMenuOpen}
+                onToggleGlobalMenu={() => setGlobalMenuOpen((open) => !open)}
+                onSelectGlobalGame={selectGlobal}
+                onOpenGlobalSettings={openGlobalSettings}
+              />
+            </header>
+
+            <section className="timer-screen__clock">
+              <p className="timer-screen__time">{formatTime(remainingSeconds)}</p>
+            </section>
+
+            <footer className="timer-screen__bottom">
+              <div className="info-card">
+                <div className="info-card__row">
+                  <span className="info-card__label">Blinds</span>
+                  <strong>{formatBlinds(currentLevel)}</strong>
+                </div>
+                <div className="info-card__row">
+                  <span className="info-card__label">Ante</span>
+                  <strong>{formatAnte(currentLevel)}</strong>
+                </div>
+              </div>
+
+              <div className="next-card">
+                <div className="next-card__row">
+                  <span className="next-card__label">Next</span>
+                  <strong>{nextLevelLabel}</strong>
+                </div>
+                <div className="next-card__row">
+                  <span className="next-card__label">Blinds</span>
+                  <strong>{formatBlinds(nextLevel)}</strong>
+                </div>
+                <div className="next-card__row">
+                  <span className="next-card__label">Ante</span>
+                  <strong>{formatAnte(nextLevel)}</strong>
+                </div>
+                <Controls isRunning={isRunning} onAction={handleControl} />
+                {resetConfirm && <p className="reset-hint">한 번 더 누르면 LEVEL 1부터 리셋됩니다</p>}
+              </div>
+
+              <div className="timer-screen__scrubber">
+                <TimeScrubber
+                  isRunning={isRunning}
+                  remainingSeconds={remainingSeconds}
+                  maxSeconds={Math.max(initialSeconds, remainingSeconds)}
+                  onToggle={() => handleControl('toggle')}
+                  onSeek={(seconds) => {
+                    setResetConfirm(false)
+                    setSeconds(seconds)
+                  }}
+                />
+              </div>
+            </footer>
+          </main>
+
+          <PinModal
+            open={pinOpen}
+            error={pinError}
+            title="전체 관리자 PIN"
+            onClose={() => {
+              setPinOpen(false)
+              setPinError('')
+            }}
+            onSubmit={handleGlobalPinSubmit}
+          />
+
+          <AdminPanel
+            open={adminOpen}
+            games={settings.globalGames}
+            activeGameId={settings.activeGlobalGameId}
+            adminPin={settings.adminPin}
+            onClose={() => {
+              setAdminOpen(false)
+              setAdminSaveError('')
+            }}
+            onSave={handleGlobalAdminSave}
+            saveError={adminSaveError}
+            saving={adminSaving}
+          />
         </div>
-
-        <header className={`timer-screen__top${globalMenuOpen ? ' is-menu-open' : ''}`}>
-          <div className="timer-screen__level-block">
-            <p className="timer-screen__level">{levelLabel}</p>
-          </div>
-
-          <TopGameBar
-            globalGames={settings.globalGames}
-            activeGlobalGameId={settings.activeGlobalGameId}
-            globalMenuOpen={globalMenuOpen}
-            onToggleGlobalMenu={() => setGlobalMenuOpen((open) => !open)}
-            onSelectGlobalGame={selectGlobal}
-            onOpenGlobalSettings={openGlobalSettings}
-          />
-        </header>
-
-        <section className="timer-screen__clock">
-          <p className="timer-screen__time">{formatTime(remainingSeconds)}</p>
-        </section>
-
-        <footer className="timer-screen__bottom">
-          <div className="info-card">
-            <div className="info-card__row">
-              <span className="info-card__label">Blinds</span>
-              <strong>{formatBlinds(currentLevel)}</strong>
-            </div>
-            <div className="info-card__row">
-              <span className="info-card__label">Ante</span>
-              <strong>{formatAnte(currentLevel)}</strong>
-            </div>
-          </div>
-
-          <div className="next-card">
-            <div className="next-card__row">
-              <span className="next-card__label">Next</span>
-              <strong>{nextLevelLabel}</strong>
-            </div>
-            <div className="next-card__row">
-              <span className="next-card__label">Blinds</span>
-              <strong>{formatBlinds(nextLevel)}</strong>
-            </div>
-            <div className="next-card__row">
-              <span className="next-card__label">Ante</span>
-              <strong>{formatAnte(nextLevel)}</strong>
-            </div>
-            <Controls isRunning={isRunning} onAction={handleControl} />
-            {resetConfirm && <p className="reset-hint">한 번 더 누르면 LEVEL 1부터 리셋됩니다</p>}
-          </div>
-
-          <div className="timer-screen__scrubber">
-            <TimeScrubber
-              isRunning={isRunning}
-              remainingSeconds={remainingSeconds}
-              maxSeconds={Math.max(initialSeconds, remainingSeconds)}
-              onToggle={() => handleControl('toggle')}
-              onSeek={(seconds) => {
-                setResetConfirm(false)
-                setSeconds(seconds)
-              }}
-            />
-          </div>
-        </footer>
-      </main>
-
-      <PinModal
-        open={pinOpen}
-        error={pinError}
-        title="전체 관리자 PIN"
-        onClose={() => {
-          setPinOpen(false)
-          setPinError('')
-        }}
-        onSubmit={handleGlobalPinSubmit}
-      />
-
-      <AdminPanel
-        open={adminOpen}
-        games={settings.globalGames}
-        activeGameId={settings.activeGlobalGameId}
-        adminPin={settings.adminPin}
-        onClose={() => {
-          setAdminOpen(false)
-          setAdminSaveError('')
-        }}
-        onSave={handleGlobalAdminSave}
-        saveError={adminSaveError}
-        saving={adminSaving}
-      />
+      </div>
     </div>
   )
 }

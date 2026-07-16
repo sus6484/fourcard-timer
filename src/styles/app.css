@@ -38,6 +38,27 @@ select {
 .app-shell {
   width: 100%;
   height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.stage-viewport {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #000000;
+}
+
+.stage-canvas {
+  position: relative;
+  flex-shrink: 0;
+  transform-origin: center center;
+  container-type: size;
+  container-name: stage;
+  background: var(--bg);
+  overflow: hidden;
 }
 
 .boot-error {
@@ -78,9 +99,7 @@ select {
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 100vh;
-  min-height: 100dvh;
-  padding: clamp(16px, 2vw, 28px) clamp(20px, 3vw, 40px);
+  padding: clamp(16px, 2cqw, 28px) clamp(20px, 3cqw, 40px);
   display: grid;
   grid-template-rows: auto 1fr auto;
   background: var(--bg);
@@ -98,7 +117,7 @@ select {
 }
 
 .timer-screen__watermark-logo {
-  width: clamp(240px, 36vw, 480px);
+  width: clamp(240px, 36cqw, 480px);
   height: auto;
   display: block;
   opacity: 0.28;
@@ -122,7 +141,7 @@ select {
   flex-direction: column;
   gap: 10px;
   justify-self: end;
-  min-width: min(420px, 42vw);
+  min-width: min(420px, 42cqw);
 }
 
 .top-game-bar__row {
@@ -134,7 +153,7 @@ select {
 
 .top-game-bar__label {
   color: var(--gold);
-  font-size: clamp(12px, 1.1vw, 15px);
+  font-size: clamp(12px, 1.1cqw, 15px);
   font-weight: 600;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -146,7 +165,7 @@ select {
   background: rgba(0, 0, 0, 0.65);
   color: var(--gold);
   padding: 6px 12px;
-  font-size: clamp(12px, 1.1vw, 15px);
+  font-size: clamp(12px, 1.1cqw, 15px);
   font-weight: 600;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -165,7 +184,7 @@ select {
   border: 0;
   background: transparent;
   color: var(--text);
-  font-size: clamp(18px, 2vw, 28px);
+  font-size: clamp(18px, 2cqw, 28px);
   font-weight: 500;
   padding: 8px 0;
   cursor: pointer;
@@ -184,8 +203,8 @@ select {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  min-width: min(360px, 80vw);
-  max-height: min(70vh, 520px);
+  min-width: min(360px, 80cqw);
+  max-height: min(70cqh, 520px);
   overflow: auto;
   background: #ffffff;
   color: #111111;
@@ -201,7 +220,7 @@ select {
   color: inherit;
   text-align: left;
   padding: 18px 22px;
-  font-size: clamp(16px, 1.6vw, 22px);
+  font-size: clamp(16px, 1.6cqw, 22px);
   cursor: pointer;
 }
 
@@ -218,17 +237,17 @@ select {
 
 .timer-screen__level {
   margin: 0;
-  font-size: clamp(42px, 5vw, 72px);
+  font-size: clamp(42px, 5cqw, 72px);
   font-weight: 700;
   letter-spacing: 0.04em;
 }
 
 .timer-screen__memo-rail {
   position: absolute;
-  left: clamp(20px, 3vw, 40px);
-  top: clamp(88px, 11vw, 128px);
-  width: min(360px, 36vw);
-  max-height: min(72vh, calc(100dvh - 200px));
+  left: clamp(20px, 3cqw, 40px);
+  top: clamp(88px, 11cqw, 128px);
+  width: min(360px, 36cqw);
+  max-height: min(72cqh, calc(100cqh - 200px));
   overflow-y: auto;
   overscroll-behavior: contain;
   z-index: 4;
@@ -247,7 +266,7 @@ select {
   background: rgba(0, 0, 0, 0.65);
   color: var(--gold);
   padding: 6px 12px;
-  font-size: clamp(12px, 1.1vw, 15px);
+  font-size: clamp(12px, 1.1cqw, 15px);
   font-weight: 600;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -276,7 +295,7 @@ select {
 
 .memo-panel__toolbar-label {
   color: var(--gold);
-  font-size: clamp(12px, 1.1vw, 14px);
+  font-size: clamp(12px, 1.1cqw, 14px);
   font-weight: 700;
   letter-spacing: 0.06em;
 }
@@ -297,7 +316,7 @@ select {
   background: rgba(200, 169, 107, 0.1);
   color: var(--gold);
   padding: 6px 10px;
-  font-size: clamp(14px, 1.2vw, 16px);
+  font-size: clamp(14px, 1.2cqw, 16px);
   font-weight: 700;
   cursor: pointer;
 }
@@ -310,7 +329,7 @@ select {
 .memo-panel__size-value {
   min-width: 34px;
   color: var(--text);
-  font-size: clamp(14px, 1.2vw, 16px);
+  font-size: clamp(14px, 1.2cqw, 16px);
   font-weight: 700;
   text-align: center;
 }
@@ -363,7 +382,7 @@ select {
 }
 
 .memo-panel__input {
-  height: min(56vh, 360px);
+  height: min(56cqh, 360px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -378,7 +397,7 @@ select {
 
 .timer-screen__time {
   margin: 0;
-  font-size: clamp(96px, 18vw, 220px);
+  font-size: clamp(96px, 18cqw, 220px);
   font-weight: 600;
   letter-spacing: 0.06em;
   line-height: 1;
@@ -397,7 +416,7 @@ select {
 .timer-screen__scrubber {
   grid-column: 1 / -1;
   justify-self: center;
-  width: min(420px, 72vw);
+  width: min(420px, 72cqw);
 }
 
 .info-card,
@@ -420,18 +439,18 @@ select {
 .info-card__label,
 .next-card__label {
   color: var(--gold);
-  font-size: clamp(18px, 2vw, 28px);
+  font-size: clamp(18px, 2cqw, 28px);
   font-weight: 500;
 }
 
 .info-card__row strong {
-  font-size: clamp(42px, 5vw, 72px);
+  font-size: clamp(42px, 5cqw, 72px);
   font-weight: 700;
 }
 
 .next-card__row strong {
   color: var(--next-value);
-  font-size: clamp(24px, 2.8vw, 40px);
+  font-size: clamp(24px, 2.8cqw, 40px);
   font-weight: 600;
 }
 
@@ -443,13 +462,13 @@ select {
 .controls {
   display: flex;
   justify-content: flex-end;
-  gap: clamp(8px, 1.2vw, 16px);
+  gap: clamp(8px, 1.2cqw, 16px);
   margin-top: 8px;
 }
 
 .controls__button {
-  width: clamp(44px, 4.5vw, 64px);
-  height: clamp(44px, 4.5vw, 64px);
+  width: clamp(44px, 4.5cqw, 64px);
+  height: clamp(44px, 4.5cqw, 64px);
   border: 0;
   background: transparent;
   padding: 0;
@@ -470,17 +489,17 @@ select {
 .controls__adjust {
   display: flex;
   align-items: center;
-  gap: clamp(6px, 0.8vw, 10px);
+  gap: clamp(6px, 0.8cqw, 10px);
 }
 
 .controls__adjust-button {
-  min-width: clamp(44px, 4.5vw, 56px);
-  height: clamp(36px, 3.6vw, 48px);
+  min-width: clamp(44px, 4.5cqw, 56px);
+  height: clamp(36px, 3.6cqw, 48px);
   border: 1px solid var(--panel-border);
   border-radius: 4px;
   background: rgba(200, 169, 107, 0.1);
   color: var(--gold);
-  font-size: clamp(13px, 1.2vw, 16px);
+  font-size: clamp(13px, 1.2cqw, 16px);
   font-weight: 600;
   letter-spacing: 0.02em;
   padding: 0 6px;
@@ -502,7 +521,7 @@ select {
 .time-scrubber {
   display: flex;
   align-items: center;
-  gap: clamp(10px, 1.2vw, 16px);
+  gap: clamp(10px, 1.2cqw, 16px);
   width: 100%;
   padding: 8px 12px;
   border: 1px solid var(--panel-border);
@@ -512,8 +531,8 @@ select {
 
 .time-scrubber__toggle {
   flex-shrink: 0;
-  width: clamp(36px, 3.6vw, 48px);
-  height: clamp(36px, 3.6vw, 48px);
+  width: clamp(36px, 3.6cqw, 48px);
+  height: clamp(36px, 3.6cqw, 48px);
   border: 0;
   background: transparent;
   padding: 0;
@@ -546,8 +565,8 @@ select {
 .time-scrubber__slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: clamp(18px, 2vw, 24px);
-  height: clamp(28px, 3vw, 36px);
+  width: clamp(18px, 2cqw, 24px);
+  height: clamp(28px, 3cqw, 36px);
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 4px;
   background: rgba(200, 169, 107, 0.85);
@@ -555,8 +574,8 @@ select {
 }
 
 .time-scrubber__slider::-moz-range-thumb {
-  width: clamp(18px, 2vw, 24px);
-  height: clamp(28px, 3vw, 36px);
+  width: clamp(18px, 2cqw, 24px);
+  height: clamp(28px, 3cqw, 36px);
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 4px;
   background: rgba(200, 169, 107, 0.85);
@@ -573,7 +592,7 @@ select {
 
 .admin-overlay,
 .pin-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.72);
   display: flex;
@@ -586,7 +605,7 @@ select {
 .admin-panel,
 .pin-modal {
   width: min(960px, 100%);
-  max-height: 90vh;
+  max-height: 90cqh;
   overflow: auto;
   background: #121212;
   border: 1px solid rgba(200, 169, 107, 0.25);
@@ -661,7 +680,7 @@ select {
 }
 
 .app-sync-status {
-  position: fixed;
+  position: absolute;
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
@@ -855,45 +874,4 @@ select {
 .pin-modal__actions {
   justify-content: flex-end;
   margin-top: 16px;
-}
-
-@media (max-width: 900px) {
-  .timer-screen__memo-rail {
-    top: clamp(72px, 18vw, 104px);
-    width: min(320px, 72vw);
-    max-height: min(60vh, calc(100dvh - 240px));
-  }
-
-  .memo-panel__input {
-    height: min(48vh, 300px);
-  }
-
-  .timer-screen__top,
-  .timer-screen__bottom {
-    grid-template-columns: 1fr;
-  }
-
-  .top-game-bar {
-    justify-self: stretch;
-    min-width: 0;
-  }
-
-  .timer-screen__level-block,
-  .next-card,
-  .info-card__row strong,
-  .next-card__row strong,
-  .controls {
-    text-align: left;
-    justify-content: flex-start;
-  }
-
-  .admin-level-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (orientation: portrait) {
-  .timer-screen {
-    overflow: auto;
-  }
 }
