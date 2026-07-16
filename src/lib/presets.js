@@ -139,7 +139,7 @@ export function formatTime(totalSeconds) {
 export function getSecondsUntilNextBreak(levels, levelIndex, remainingSeconds) {
   if (!levels?.length) return null
 
-  let total = levels[levelIndex]?.isBreak ? 0 : remainingSeconds
+  let total = remainingSeconds
 
   for (let i = levelIndex + 1; i < levels.length; i++) {
     if (levels[i].isBreak) return total
