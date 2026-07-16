@@ -98,10 +98,10 @@ select {
 }
 
 .timer-screen__watermark-logo {
-  width: clamp(320px, 52vw, 680px);
+  width: clamp(240px, 36vw, 480px);
   height: auto;
   display: block;
-  opacity: 0.5;
+  opacity: 0.28;
 }
 
 .timer-screen__top {
