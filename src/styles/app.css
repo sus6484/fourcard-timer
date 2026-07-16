@@ -517,6 +517,10 @@ select {
   font-weight: 600;
 }
 
+.next-card__row--break {
+  align-items: center;
+}
+
 .next-card {
   justify-self: end;
   width: min(100%, 520px);

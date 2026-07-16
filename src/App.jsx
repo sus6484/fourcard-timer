@@ -389,7 +389,7 @@ export default function App() {
                   <span className="next-card__label">Ante</span>
                   <strong>{formatAnte(nextLevel)}</strong>
                 </div>
-                <div className="next-card__row">
+                <div className="next-card__row next-card__row--break">
                   <span className="next-card__label">Next Break</span>
                   <strong>{secondsUntilNextBreak != null ? formatTime(secondsUntilNextBreak) : '—'}</strong>
                 </div>
