@@ -19,6 +19,8 @@ body,
   width: 100%;
   height: 100%;
   margin: 0;
+  overflow: hidden;
+  background: #000000;
 }
 
 body {
@@ -38,22 +40,31 @@ select {
 .app-shell {
   width: 100%;
   height: 100%;
-  background: var(--bg);
+  background: #000000;
   overflow: hidden;
 }
 
 .stage-viewport {
+  position: relative;
   width: 100%;
   height: 100%;
-  display: grid;
-  place-items: center;
   overflow: hidden;
   background: #000000;
 }
 
+.stage-slot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  background: var(--bg);
+}
+
 .stage-canvas {
-  position: relative;
-  flex-shrink: 0;
+  position: absolute;
+  left: 50%;
+  top: 50%;
   transform-origin: center center;
   container-type: size;
   container-name: stage;
@@ -93,6 +104,58 @@ select {
   color: var(--gold);
   padding: 12px 18px;
   cursor: pointer;
+}
+
+.start-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 32px;
+  background: #000000;
+  text-align: center;
+}
+
+.start-overlay__eyebrow {
+  margin: 0;
+  color: var(--gold-soft);
+  font-size: clamp(14px, 2.2cqw, 22px);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.start-overlay__btn {
+  min-width: min(420px, 70%);
+  border: 1px solid var(--panel-border);
+  background: rgba(200, 169, 107, 0.16);
+  color: var(--gold);
+  padding: clamp(18px, 2.8cqh, 28px) clamp(28px, 4cqw, 48px);
+  font-size: clamp(22px, 3.2cqw, 36px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.start-overlay__btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.start-overlay__btn:not(:disabled):hover,
+.start-overlay__btn:not(:disabled):focus-visible {
+  background: rgba(200, 169, 107, 0.28);
+  outline: none;
+}
+
+.start-overlay__hint {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: clamp(12px, 1.6cqw, 16px);
 }
 
 .timer-screen {

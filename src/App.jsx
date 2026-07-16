@@ -23,7 +23,7 @@ import {
   updateScreenMemo,
   updateMemoStyle,
 } from './lib/settings.js'
-import { playBlindsUp, playBreakTime, playGameStart } from './lib/sound.js'
+import { playBlindsUp, playBreakTime, playGameStart, unlockAudio } from './lib/sound.js'
 
 export default function App() {
   const [settings, setSettings] = useState(loadSettings)
@@ -39,8 +39,21 @@ export default function App() {
   const [globalSyncError, setGlobalSyncError] = useState('')
   const [adminSaveError, setAdminSaveError] = useState('')
   const [adminSaving, setAdminSaving] = useState(false)
+  const [audioReady, setAudioReady] = useState(false)
+  const [audioUnlocking, setAudioUnlocking] = useState(false)
   const verifiedGlobalPin = useRef('')
   const autoStartNextLevelRef = useRef(false)
+
+  const handleStartGame = async () => {
+    if (audioUnlocking || audioReady) return
+    setAudioUnlocking(true)
+    try {
+      await unlockAudio()
+    } finally {
+      setAudioReady(true)
+      setAudioUnlocking(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -227,13 +240,38 @@ export default function App() {
     <div className="app-shell">
       <div className="stage-viewport">
         <div
-          className="stage-canvas"
+          className="stage-slot"
           style={{
-            width: DESIGN_WIDTH,
-            height: DESIGN_HEIGHT,
-            transform: `scale(${stageScale})`,
+            width: DESIGN_WIDTH * stageScale,
+            height: DESIGN_HEIGHT * stageScale,
           }}
         >
+          <div
+            className="stage-canvas"
+            style={{
+              width: DESIGN_WIDTH,
+              height: DESIGN_HEIGHT,
+              transform: `translate(-50%, -50%) scale(${stageScale})`,
+            }}
+          >
+          {!audioReady && (
+            <div className="start-overlay" role="dialog" aria-modal="true" aria-labelledby="start-overlay-title">
+              <p id="start-overlay-title" className="start-overlay__eyebrow">
+                FOURCARD Timer
+              </p>
+              <button
+                type="button"
+                className="start-overlay__btn"
+                disabled={audioUnlocking}
+                autoFocus
+                onClick={handleStartGame}
+              >
+                {audioUnlocking ? '준비 중…' : '게임 시작'}
+              </button>
+              <p className="start-overlay__hint">Start — 효과음 권한을 활성화합니다</p>
+            </div>
+          )}
+
           {syncStatusLabel && (
             <p
               className={`app-sync-status app-sync-status--${globalSyncStatus === 'error' ? 'error' : globalSyncStatus}`}
@@ -244,7 +282,7 @@ export default function App() {
             </p>
           )}
 
-          <main className="timer-screen">
+          <main className="timer-screen" aria-hidden={!audioReady}>
             <aside
               className={`timer-screen__memo-rail${memoOpen ? ' is-open' : ''}`}
               aria-label="메모"
@@ -387,6 +425,7 @@ export default function App() {
             saveError={adminSaveError}
             saving={adminSaving}
           />
+          </div>
         </div>
       </div>
     </div>
