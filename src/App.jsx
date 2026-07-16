@@ -12,7 +12,13 @@ import {
   isFileProtocol,
   saveGlobalToCloud,
 } from './lib/globalSync.js'
-import { formatAnte, formatBlinds, formatTime, getScheduleLabel } from './lib/presets.js'
+import {
+  formatAnte,
+  formatBlinds,
+  formatTime,
+  getScheduleLabel,
+  getSecondsUntilNextBreak,
+} from './lib/presets.js'
 import {
   applyRemoteGlobalSettings,
   withCloudUpdatedAt,
@@ -189,6 +195,7 @@ export default function App() {
 
   const levelLabel = getScheduleLabel(levels, levelIndex)
   const nextLevelLabel = getScheduleLabel(levels, levelIndex + 1)
+  const secondsUntilNextBreak = getSecondsUntilNextBreak(levels, levelIndex, remainingSeconds)
 
   const handleGlobalAdminSave = async (draft) => {
     setAdminSaving(true)
@@ -366,6 +373,10 @@ export default function App() {
                 <div className="info-card__row">
                   <span className="info-card__label">Ante</span>
                   <strong>{formatAnte(currentLevel)}</strong>
+                </div>
+                <div className="info-card__row">
+                  <span className="info-card__label">Next Break</span>
+                  <strong>{secondsUntilNextBreak != null ? formatTime(secondsUntilNextBreak) : '—'}</strong>
                 </div>
               </div>
 

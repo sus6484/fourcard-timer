@@ -136,6 +136,19 @@ export function formatTime(totalSeconds) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
+export function getSecondsUntilNextBreak(levels, levelIndex, remainingSeconds) {
+  if (!levels?.length) return null
+
+  let total = levels[levelIndex]?.isBreak ? 0 : remainingSeconds
+
+  for (let i = levelIndex + 1; i < levels.length; i++) {
+    if (levels[i].isBreak) return total
+    total += levels[i].minutes * 60
+  }
+
+  return null
+}
+
 export function cloneGame(game) {
   return {
     ...game,

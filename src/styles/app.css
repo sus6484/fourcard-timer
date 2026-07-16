@@ -460,7 +460,7 @@ select {
 
 .timer-screen__time {
   margin: 0;
-  font-size: clamp(96px, 18cqw, 220px);
+  font-size: clamp(104px, 19.5cqw, 240px);
   font-weight: 600;
   letter-spacing: 0.06em;
   line-height: 1;
