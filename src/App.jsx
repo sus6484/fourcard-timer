@@ -374,10 +374,6 @@ export default function App() {
                   <span className="info-card__label">Ante</span>
                   <strong>{formatAnte(currentLevel)}</strong>
                 </div>
-                <div className="info-card__row">
-                  <span className="info-card__label">Next Break</span>
-                  <strong>{secondsUntilNextBreak != null ? formatTime(secondsUntilNextBreak) : '—'}</strong>
-                </div>
               </div>
 
               <div className="next-card">
@@ -392,6 +388,10 @@ export default function App() {
                 <div className="next-card__row">
                   <span className="next-card__label">Ante</span>
                   <strong>{formatAnte(nextLevel)}</strong>
+                </div>
+                <div className="next-card__row">
+                  <span className="next-card__label">Next Break</span>
+                  <strong>{secondsUntilNextBreak != null ? formatTime(secondsUntilNextBreak) : '—'}</strong>
                 </div>
                 <Controls isRunning={isRunning} onAction={handleControl} />
                 {resetConfirm && <p className="reset-hint">한 번 더 누르면 LEVEL 1부터 리셋됩니다</p>}
