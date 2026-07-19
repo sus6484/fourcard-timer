@@ -29,7 +29,14 @@ import {
   updateScreenMemo,
   updateMemoStyle,
 } from './lib/settings.js'
-import { playBlindsUp, playBreakTime, playGameStart, unlockAudio } from './lib/sound.js'
+import {
+  ensureAudioRunning,
+  getAudioDebugState,
+  playBlindsUp,
+  playBreakTime,
+  playGameStart,
+  unlockAudio,
+} from './lib/sound.js'
 
 export default function App() {
   const [settings, setSettings] = useState(loadSettings)
@@ -50,11 +57,18 @@ export default function App() {
   const verifiedGlobalPin = useRef('')
   const autoStartNextLevelRef = useRef(false)
 
-  const handleStartGame = async () => {
+  const handleStartGame = async (event) => {
+    // pointerdown / click / Enter — all count as the TV user gesture.
+    event?.preventDefault?.()
     if (audioUnlocking || audioReady) return
+
+    console.log('[audio] start button gesture:', event?.type ?? 'unknown')
     setAudioUnlocking(true)
     try {
       await unlockAudio()
+      console.log('[audio] start complete:', getAudioDebugState())
+    } catch (error) {
+      console.log('[audio] start failed:', error)
     } finally {
       setAudioReady(true)
       setAudioUnlocking(false)
@@ -139,6 +153,8 @@ export default function App() {
   }
 
   const handleControl = (action) => {
+    ensureAudioRunning(`control:${action}`)
+
     if (action === 'prev') {
       if (levelIndex > 0) setLevelIndex((index) => index - 1)
       return
@@ -271,11 +287,19 @@ export default function App() {
                 className="start-overlay__btn"
                 disabled={audioUnlocking}
                 autoFocus
+                onPointerDown={handleStartGame}
                 onClick={handleStartGame}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ' || event.key === 'OK') {
+                    handleStartGame(event)
+                  }
+                }}
               >
-                {audioUnlocking ? '준비 중…' : '게임 시작'}
+                {audioUnlocking ? '오디오 활성화 중…' : '게임 시작 (음소거 해제)'}
               </button>
-              <p className="start-overlay__hint">Start — 효과음 권한을 활성화합니다</p>
+              <p className="start-overlay__hint">
+                이 버튼을 눌러 TV 브라우저 오디오를 활성화합니다
+              </p>
             </div>
           )}
 
