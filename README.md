@@ -38,9 +38,6 @@ VITE_FIREBASE_APP_ID=...
 }
 ```
 
-9. (선택) 앱에서 관리자 로그인 후 **구글 시트에서 가져오기**로 기존 프리셋 이관  
-   - 이관이 끝나면 Sheets 연결은 더 이상 필요 없습니다. (`src/lib/presetsSync.js`의 `LEGACY_SHEETS_URL` / `migratePresetsFromSheets`는 이후 삭제해도 됩니다.)
-
 `.env` / `.env.local`은 Git에 커밋하지 마세요.
 
 ## 로컬 실행

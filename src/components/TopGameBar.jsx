@@ -7,13 +7,10 @@ export default function TopGameBar({
   onToggleGlobalMenu,
   onSelectGlobalGame,
   onOpenGlobalSettings,
-  onOpenBranchManager,
+  onOpenBranchLogin,
   onLogout,
-  canManagePresets = false,
+  isLoggedIn = false,
   sessionLabel = '',
-  branches = [],
-  selectedBranchId = '',
-  onSelectBranch,
 }) {
   return (
     <div className="top-game-bar">
@@ -26,36 +23,25 @@ export default function TopGameBar({
           onToggle={onToggleGlobalMenu}
           onSelect={onSelectGlobalGame}
         />
-        {canManagePresets ? (
-          <>
-            <button type="button" className="top-game-bar__settings" onClick={onOpenGlobalSettings}>
-              설정
-            </button>
-            <button type="button" className="top-game-bar__settings" onClick={onOpenBranchManager}>
-              지점
-            </button>
-            {branches.length > 0 ? (
-              <label className="top-game-bar__branch">
-                <span className="visually-hidden">지점 선택</span>
-                <select
-                  value={selectedBranchId}
-                  onChange={(event) => onSelectBranch?.(event.target.value)}
-                >
-                  <option value="">지점 선택</option>
-                  {branches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name || branch.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-          </>
-        ) : null}
-        {sessionLabel ? <span className="top-game-bar__session">{sessionLabel}</span> : null}
-        <button type="button" className="top-game-bar__settings" onClick={onLogout}>
-          로그아웃
+        <button type="button" className="top-game-bar__settings" onClick={onOpenGlobalSettings}>
+          설정
         </button>
+      </div>
+
+      <div className="top-game-bar__row top-game-bar__row--actions">
+        {sessionLabel ? (
+          <span className="top-game-bar__settings top-game-bar__session-btn">{sessionLabel}</span>
+        ) : (
+          <span className="top-game-bar__settings top-game-bar__session-btn">지점미선택</span>
+        )}
+        <button type="button" className="top-game-bar__settings" onClick={onOpenBranchLogin}>
+          지점
+        </button>
+        {isLoggedIn ? (
+          <button type="button" className="top-game-bar__settings" onClick={onLogout}>
+            로그아웃
+          </button>
+        ) : null}
       </div>
     </div>
   )

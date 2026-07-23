@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AdminPanel from './components/AdminPanel.jsx'
-import BranchManager from './components/BranchManager.jsx'
+import BranchLoginScreen from './components/BranchLoginScreen.jsx'
 import Controls from './components/Controls.jsx'
 import LoginScreen from './components/LoginScreen.jsx'
 import TimeScrubber from './components/TimeScrubber.jsx'
@@ -11,8 +11,8 @@ import { DESIGN_HEIGHT, DESIGN_WIDTH, useFitScale } from './hooks/useFitScale.js
 import logoUrl from '../image/logo.png'
 import {
   isAdminSession,
-  listBranches,
   loadCachedSession,
+  loginWithBranchPassword,
   loginWithUsernamePassword,
   logout,
   subscribeAuth,
@@ -20,7 +20,6 @@ import {
 import { isFirebaseConfigured } from './lib/firebase.js'
 import {
   isFileProtocol,
-  migratePresetsFromSheets,
   savePresetsToCloud,
   subscribePresets,
 } from './lib/presetsSync.js'
@@ -56,7 +55,6 @@ import {
 
 export default function App() {
   const [authSession, setAuthSession] = useState(() => loadCachedSession())
-  const [authReady, setAuthReady] = useState(!isFirebaseConfigured())
   const [loginError, setLoginError] = useState('')
   const [loginLoading, setLoginLoading] = useState(false)
 
@@ -64,7 +62,6 @@ export default function App() {
   const [levelIndex, setLevelIndex] = useState(0)
   const [globalMenuOpen, setGlobalMenuOpen] = useState(false)
   const [adminOpen, setAdminOpen] = useState(false)
-  const [branchManagerOpen, setBranchManagerOpen] = useState(false)
   const [resetConfirm, setResetConfirm] = useState(false)
   const [memoOpen, setMemoOpen] = useState(false)
   const [memoEditing, setMemoEditing] = useState(false)
@@ -72,12 +69,12 @@ export default function App() {
   const [globalSyncError, setGlobalSyncError] = useState('')
   const [adminSaveError, setAdminSaveError] = useState('')
   const [adminSaving, setAdminSaving] = useState(false)
-  const [migrating, setMigrating] = useState(false)
-  const [migrateMessage, setMigrateMessage] = useState('')
   const [audioReady, setAudioReady] = useState(false)
   const [audioUnlocking, setAudioUnlocking] = useState(false)
-  const [branches, setBranches] = useState([])
-  const [selectedBranchId, setSelectedBranchId] = useState('')
+  const [loginOpen, setLoginOpen] = useState(false)
+  const [branchLoginOpen, setBranchLoginOpen] = useState(false)
+  const [branchLoginError, setBranchLoginError] = useState('')
+  const [branchLoginLoading, setBranchLoginLoading] = useState(false)
 
   const autoStartNextLevelRef = useRef(false)
   const skipLevelResetRef = useRef(false)
@@ -88,9 +85,7 @@ export default function App() {
   const levelIndexRef = useRef(levelIndex)
 
   const isAdmin = isAdminSession(authSession)
-  const activeBranchId = isAdmin
-    ? selectedBranchId
-    : authSession?.branchId || ''
+  const activeBranchId = authSession?.branchId || ''
 
   useEffect(() => {
     settingsRef.current = settings
@@ -106,40 +101,19 @@ export default function App() {
 
   useEffect(() => {
     if (!isFirebaseConfigured()) {
-      setAuthReady(true)
       return undefined
     }
 
     const unsubscribe = subscribeAuth(
       (session) => {
         setAuthSession(session)
-        setAuthReady(true)
-        if (session?.role === 'branch' && session.branchId) {
-          setSelectedBranchId(session.branchId)
-        }
       },
       (error) => {
         setLoginError(error?.message ?? '인증 상태를 확인하지 못했습니다.')
-        setAuthReady(true)
       },
     )
     return unsubscribe
   }, [])
-
-  useEffect(() => {
-    if (!authSession || !isAdmin) return undefined
-    let cancelled = false
-    listBranches()
-      .then((items) => {
-        if (!cancelled) setBranches(items)
-      })
-      .catch(() => {
-        if (!cancelled) setBranches([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [authSession, isAdmin, branchManagerOpen])
 
   useEffect(() => {
     if (!authSession) {
@@ -428,8 +402,10 @@ export default function App() {
     try {
       const session = await loginWithUsernamePassword(username, password)
       setAuthSession(session)
-      if (session.role === 'branch' && session.branchId) {
-        setSelectedBranchId(session.branchId)
+      setLoginOpen(false)
+      if (isAdminSession(session)) {
+        setAdminSaveError('')
+        setAdminOpen(true)
       }
     } catch (error) {
       const message =
@@ -442,12 +418,57 @@ export default function App() {
     }
   }
 
+  const handleBranchLogin = async ({ branchId, password }) => {
+    setBranchLoginLoading(true)
+    setBranchLoginError('')
+    try {
+      const session = await loginWithBranchPassword(branchId, password)
+      setAuthSession(session)
+      setBranchLoginOpen(false)
+    } catch (error) {
+      const message =
+        error?.code === 'auth/invalid-credential' || error?.code === 'auth/wrong-password'
+          ? '비밀번호가 올바르지 않습니다.'
+          : error?.message ?? '지점 로그인에 실패했습니다.'
+      setBranchLoginError(message)
+    } finally {
+      setBranchLoginLoading(false)
+    }
+  }
+
   const handleLogout = async () => {
     await logout()
     setAuthSession(null)
     setAdminOpen(false)
-    setBranchManagerOpen(false)
-    setSelectedBranchId('')
+    setLoginOpen(false)
+    setBranchLoginOpen(false)
+  }
+
+  const handleOpenGlobalSettings = () => {
+    if (isAdmin) {
+      setAdminSaveError('')
+      setAdminOpen(true)
+      return
+    }
+    setLoginError('')
+    setLoginOpen(true)
+  }
+
+  const handleOpenBranchLogin = () => {
+    setBranchLoginError('')
+    setBranchLoginOpen(true)
+  }
+
+  const handleCloseLogin = () => {
+    if (loginLoading) return
+    setLoginOpen(false)
+    setLoginError('')
+  }
+
+  const handleCloseBranchLogin = () => {
+    if (branchLoginLoading) return
+    setBranchLoginOpen(false)
+    setBranchLoginError('')
   }
 
   const handleGlobalAdminSave = async (draft) => {
@@ -480,27 +501,6 @@ export default function App() {
     }
   }
 
-  const handleMigrateFromSheets = async () => {
-    setMigrating(true)
-    setMigrateMessage('')
-    setAdminSaveError('')
-    try {
-      const result = await migratePresetsFromSheets()
-      persistSettings(
-        withCloudUpdatedAt(
-          applyRemoteGlobalSettings(settings, result),
-          result.updatedAt,
-        ),
-      )
-      setMigrateMessage('구글 시트 프리셋을 Firebase로 가져왔습니다. 이제 시트 연결 없이 사용합니다.')
-      setGlobalSyncStatus('ready')
-    } catch (error) {
-      setAdminSaveError(error?.message ?? '구글 시트 이관에 실패했습니다.')
-    } finally {
-      setMigrating(false)
-    }
-  }
-
   const persistMemo = (nextSettings) => {
     persistSettings(nextSettings)
     if (!activeBranchId) return
@@ -520,11 +520,11 @@ export default function App() {
         ? 'Firebase 동기화 실패'
         : ''
 
-  const sessionLabel = isAdmin
-    ? selectedBranchId
-      ? `관리자 · ${branches.find((b) => b.id === selectedBranchId)?.name || selectedBranchId}`
-      : '관리자 · 지점 미선택'
-    : authSession?.displayName || authSession?.username || '지점'
+  const sessionLabel = !authSession
+    ? ''
+    : isAdmin
+      ? '관리자'
+      : authSession?.displayName || authSession?.username || '지점'
 
   const stageScale = useFitScale(DESIGN_WIDTH, DESIGN_HEIGHT)
   const firebaseReady = isFirebaseConfigured()
@@ -544,29 +544,6 @@ export default function App() {
       setAudioReady(true)
       setAudioUnlocking(false)
     }
-  }
-
-  if (!authReady) {
-    return (
-      <div className="app-shell">
-        <div className="login-screen">
-          <p className="login-card__hint">인증 확인 중…</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!authSession) {
-    return (
-      <div className="app-shell">
-        <LoginScreen
-          configured={firebaseReady}
-          loading={loginLoading}
-          error={loginError}
-          onSubmit={handleLogin}
-        />
-      </div>
-    )
   }
 
   return (
@@ -620,12 +597,6 @@ export default function App() {
             >
               {syncStatusLabel}
               {globalSyncStatus === 'error' && globalSyncError ? `: ${globalSyncError}` : ''}
-            </p>
-          )}
-
-          {isAdmin && !selectedBranchId && (
-            <p className="app-sync-status app-sync-status--loading" role="status">
-              상단에서 지점을 선택하면 해당 지점 타이머를 제어·동기화합니다
             </p>
           )}
 
@@ -696,18 +667,11 @@ export default function App() {
                 globalMenuOpen={globalMenuOpen}
                 onToggleGlobalMenu={() => setGlobalMenuOpen((open) => !open)}
                 onSelectGlobalGame={selectGlobal}
-                onOpenGlobalSettings={() => {
-                  setAdminSaveError('')
-                  setMigrateMessage('')
-                  setAdminOpen(true)
-                }}
-                onOpenBranchManager={() => setBranchManagerOpen(true)}
+                onOpenGlobalSettings={handleOpenGlobalSettings}
+                onOpenBranchLogin={handleOpenBranchLogin}
                 onLogout={handleLogout}
-                canManagePresets={isAdmin}
+                isLoggedIn={Boolean(authSession)}
                 sessionLabel={sessionLabel}
-                branches={branches}
-                selectedBranchId={selectedBranchId}
-                onSelectBranch={setSelectedBranchId}
               />
             </header>
 
@@ -779,32 +743,43 @@ export default function App() {
           </main>
 
           {isAdmin ? (
-            <>
-              <AdminPanel
-                open={adminOpen}
-                games={settings.globalGames}
-                activeGameId={settings.activeGlobalGameId}
-                onClose={() => {
-                  setAdminOpen(false)
-                  setAdminSaveError('')
-                  setMigrateMessage('')
-                }}
-                onSave={handleGlobalAdminSave}
-                onMigrateFromSheets={handleMigrateFromSheets}
-                saveError={adminSaveError}
-                saving={adminSaving}
-                migrating={migrating}
-                migrateMessage={migrateMessage}
-              />
-              <BranchManager
-                open={branchManagerOpen}
-                onClose={() => setBranchManagerOpen(false)}
-              />
-            </>
+            <AdminPanel
+              open={adminOpen}
+              games={settings.globalGames}
+              activeGameId={settings.activeGlobalGameId}
+              onClose={() => {
+                setAdminOpen(false)
+                setAdminSaveError('')
+              }}
+              onSave={handleGlobalAdminSave}
+              saveError={adminSaveError}
+              saving={adminSaving}
+            />
           ) : null}
           </div>
         </div>
       </div>
+
+      {loginOpen ? (
+        <LoginScreen
+          configured={firebaseReady}
+          loading={loginLoading}
+          error={loginError}
+          onSubmit={handleLogin}
+          onClose={handleCloseLogin}
+        />
+      ) : null}
+
+      {branchLoginOpen ? (
+        <BranchLoginScreen
+          configured={firebaseReady}
+          loading={branchLoginLoading}
+          error={branchLoginError}
+          onSubmit={handleBranchLogin}
+          onClose={handleCloseBranchLogin}
+          canCreateAccounts={isAdmin}
+        />
+      ) : null}
     </div>
   )
 }

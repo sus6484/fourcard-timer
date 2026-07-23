@@ -97,6 +97,30 @@ export async function loginWithUsernamePassword(username, password) {
   return profile
 }
 
+export async function loginWithBranchPassword(branchId, password) {
+  if (!isFirebaseConfigured()) {
+    throw new Error('Firebase 설정이 없습니다. .env의 VITE_FIREBASE_* 값을 확인하세요.')
+  }
+  if (!branchId) {
+    throw new Error('지점을 선택하세요.')
+  }
+  if (!password) {
+    throw new Error('비밀번호를 입력하세요.')
+  }
+
+  const snapshot = await getDoc(branchesRef(branchId))
+  if (!snapshot.exists()) {
+    throw new Error('선택한 지점을 찾을 수 없습니다.')
+  }
+
+  const username = snapshot.data()?.username
+  if (!username) {
+    throw new Error('지점 계정 정보가 없습니다.')
+  }
+
+  return loginWithUsernamePassword(username, password)
+}
+
 export async function logout() {
   saveCachedSession(null)
   if (!isFirebaseConfigured()) return

@@ -23,11 +23,8 @@ export default function AdminPanel({
   activeGameId,
   onClose,
   onSave,
-  onMigrateFromSheets,
   saveError = '',
   saving = false,
-  migrating = false,
-  migrateMessage = '',
 }) {
   const [draft, setDraft] = useState(null)
   const [bulkMinutes, setBulkMinutes] = useState(8)
@@ -249,23 +246,6 @@ export default function AdminPanel({
         </header>
 
         {saveError && <p className="admin-panel__sync-error">{saveError}</p>}
-        {migrateMessage ? <p className="branch-manager__success">{migrateMessage}</p> : null}
-
-        <section className="admin-panel__section">
-          <div className="admin-panel__row admin-panel__row--between">
-            <div>
-              <h3>데이터 이전</h3>
-              <p className="admin-panel__note">기존 구글 시트 프리셋을 Firestore로 한 번 가져옵니다.</p>
-            </div>
-            <button
-              type="button"
-              onClick={onMigrateFromSheets}
-              disabled={migrating || saving || !onMigrateFromSheets}
-            >
-              {migrating ? '가져오는 중…' : '구글 시트에서 가져오기'}
-            </button>
-          </div>
-        </section>
 
         {activeGame ? (
           <>

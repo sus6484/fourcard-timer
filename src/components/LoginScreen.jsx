@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 export default function LoginScreen({
   onSubmit,
+  onClose,
   error = '',
   loading = false,
   configured = true,
@@ -22,9 +23,9 @@ export default function LoginScreen({
     <div className="login-screen" role="dialog" aria-modal="true" aria-labelledby="login-title">
       <form className="login-card" onSubmit={handleSubmit}>
         <p className="login-card__eyebrow">FOURCARD Timer</p>
-        <h1 id="login-title">지점 / 관리자 로그인</h1>
+        <h1 id="login-title">관리자 로그인</h1>
         <p className="login-card__hint">
-          아이디와 비밀번호로 로그인합니다. 같은 지점 계정으로 여러 TV를 열면 타이머가 동기화됩니다.
+          관리자 아이디와 비밀번호로 로그인합니다. 전체 게임 설정과 지점 계정 생성을 관리할 수 있습니다.
         </p>
 
         {!configured && (
@@ -65,6 +66,17 @@ export default function LoginScreen({
         <button type="submit" className="login-card__submit" disabled={!configured || loading}>
           {loading ? '로그인 중…' : '로그인'}
         </button>
+
+        {onClose ? (
+          <button
+            type="button"
+            className="login-card__cancel"
+            disabled={loading}
+            onClick={onClose}
+          >
+            닫기
+          </button>
+        ) : null}
       </form>
     </div>
   )

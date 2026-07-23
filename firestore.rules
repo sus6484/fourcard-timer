@@ -29,7 +29,7 @@ service cloud.firestore {
     }
 
     match /branches/{branchId} {
-      allow read: if signedIn();
+      allow read: if true;
       allow write: if isAdmin();
     }
 
