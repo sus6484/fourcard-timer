@@ -489,6 +489,11 @@ select {
   gap: 18px;
 }
 
+.info-card {
+  transform: translate(clamp(48px, 7cqw, 110px), clamp(-56px, -8cqh, -120px));
+  width: min(100%, 620px);
+}
+
 .info-card__row,
 .next-card__row {
   display: grid;
@@ -499,6 +504,12 @@ select {
   border-bottom: 1px solid var(--panel-border);
 }
 
+.info-card__row {
+  grid-template-columns: clamp(140px, 12cqw, 200px) 1fr;
+  gap: 16px;
+  padding-bottom: 18px;
+}
+
 .info-card__label,
 .next-card__label {
   color: var(--gold);
@@ -506,8 +517,12 @@ select {
   font-weight: 500;
 }
 
+.info-card__label {
+  font-size: clamp(26px, 2.8cqw, 40px);
+}
+
 .info-card__row strong {
-  font-size: clamp(42px, 5cqw, 72px);
+  font-size: clamp(56px, 6.5cqw, 96px);
   font-weight: 700;
 }
 
