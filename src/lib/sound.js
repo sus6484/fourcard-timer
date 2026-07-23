@@ -1,13 +1,18 @@
+import gameStartUrl from '../assets/sounds/game-start.mp3'
+import blindsUpUrl from '../assets/sounds/blinds-up.mp3'
+import breakTimeUrl from '../assets/sounds/break-time.mp3'
+
 /** Kept alive so the unlocked AudioContext is not GC'd on some TV browsers. */
 let unlockedAudioContext = null
 
 /** True after unlockAudio() finishes (success or best-effort). */
 let audioUnlocked = false
 
+/** Vite content-hashed URLs — bustes stale TV / CDN caches when audio changes. */
 const SOUND_URLS = {
-  'game-start': `${import.meta.env.BASE_URL}sounds/game-start.mp3`,
-  'blinds-up': `${import.meta.env.BASE_URL}sounds/blinds-up.mp3`,
-  'break-time': `${import.meta.env.BASE_URL}sounds/break-time.mp3`,
+  'game-start': gameStartUrl,
+  'blinds-up': blindsUpUrl,
+  'break-time': breakTimeUrl,
 }
 
 /** Decoded PCM buffers for Web Audio playback (preferred on Smart TVs). */
@@ -119,7 +124,7 @@ async function warmSound(name, ctx) {
 
   if (ctx) {
     try {
-      const response = await fetch(url)
+      const response = await fetch(url, { cache: 'no-store' })
       const arrayBuffer = await response.arrayBuffer()
       const buffer = await ctx.decodeAudioData(arrayBuffer.slice(0))
       audioBuffers.set(name, buffer)
