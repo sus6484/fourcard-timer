@@ -5,6 +5,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
   const [isRunning, setIsRunning] = useState(false)
   const endTimeRef = useRef(null)
   const onCompleteRef = useRef(onComplete)
+  const suppressCompleteRef = useRef(false)
 
   useEffect(() => {
     onCompleteRef.current = onComplete
@@ -29,7 +30,10 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
       if (nextRemaining <= 0) {
         setIsRunning(false)
         endTimeRef.current = null
-        onCompleteRef.current?.()
+        if (!suppressCompleteRef.current) {
+          onCompleteRef.current?.()
+        }
+        suppressCompleteRef.current = false
       }
     }
 
@@ -41,43 +45,59 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
   const start = useCallback(() => {
     endTimeRef.current = Date.now() + remainingSeconds * 1000
     setIsRunning(true)
+    return endTimeRef.current
   }, [remainingSeconds])
 
   const pause = useCallback(() => {
-    if (!isRunning || !endTimeRef.current) return
+    if (!isRunning || !endTimeRef.current) {
+      return remainingSeconds
+    }
     const nextRemaining = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000))
     setRemainingSeconds(nextRemaining)
     setIsRunning(false)
     endTimeRef.current = null
-  }, [isRunning])
+    return nextRemaining
+  }, [isRunning, remainingSeconds])
 
   const toggle = useCallback(() => {
-    if (isRunning) pause()
-    else start()
-  }, [isRunning, pause, start])
+    if (isRunning) {
+      return { isRunning: false, remainingSeconds: pause(), endsAt: null }
+    }
+    const endsAt = start()
+    return { isRunning: true, remainingSeconds, endsAt }
+  }, [isRunning, pause, remainingSeconds, start])
 
   const reset = useCallback((seconds = initialSeconds, { autoStart = false } = {}) => {
     setRemainingSeconds(seconds)
     if (autoStart) {
       endTimeRef.current = Date.now() + seconds * 1000
       setIsRunning(true)
-    } else {
-      setIsRunning(false)
-      endTimeRef.current = null
+      return { isRunning: true, remainingSeconds: seconds, endsAt: endTimeRef.current }
     }
+    setIsRunning(false)
+    endTimeRef.current = null
+    return { isRunning: false, remainingSeconds: seconds, endsAt: null }
   }, [initialSeconds])
 
   const adjustSeconds = useCallback((delta) => {
+    let nextValue = 0
+    let nextEndsAt = null
     setRemainingSeconds((current) => {
       const base = isRunning && endTimeRef.current
         ? Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000))
         : current
-      const next = Math.max(0, base + delta)
+      nextValue = Math.max(0, base + delta)
       if (isRunning) {
-        endTimeRef.current = Date.now() + next * 1000
+        nextEndsAt = Date.now() + nextValue * 1000
+        endTimeRef.current = nextEndsAt
       }
-      return next
+      return nextValue
     })
+    return {
+      isRunning,
+      remainingSeconds: nextValue,
+      endsAt: isRunning ? nextEndsAt : null,
+    }
   }, [isRunning])
 
   const setSeconds = useCallback((seconds) => {
@@ -88,13 +108,50 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
       setIsRunning(false)
       endTimeRef.current = null
       onCompleteRef.current?.()
-      return
+      return { isRunning: false, remainingSeconds: 0, endsAt: null }
     }
 
     if (isRunning) {
       endTimeRef.current = Date.now() + next * 1000
+      return { isRunning: true, remainingSeconds: next, endsAt: endTimeRef.current }
     }
+
+    return { isRunning: false, remainingSeconds: next, endsAt: null }
   }, [isRunning])
+
+  /**
+   * Firestore 세션을 로컬 타이머에 반영합니다.
+   * 같은 기기에서 방금 발행한 revision은 호출측에서 스킵하세요.
+   */
+  const applyRemoteSession = useCallback((session) => {
+    if (!session) return
+
+    const remoteRunning = Boolean(session.isRunning)
+    const remoteEndsAt = typeof session.endsAt === 'number' ? session.endsAt : null
+    const remoteRemaining = remoteRunning && remoteEndsAt
+      ? Math.max(0, Math.ceil((remoteEndsAt - Date.now()) / 1000))
+      : Math.max(0, Number(session.remainingSeconds) || 0)
+
+    suppressCompleteRef.current = true
+    setRemainingSeconds(remoteRemaining)
+    setIsRunning(remoteRunning && remoteRemaining > 0)
+    endTimeRef.current = remoteRunning && remoteRemaining > 0 ? remoteEndsAt : null
+
+    window.setTimeout(() => {
+      suppressCompleteRef.current = false
+    }, 0)
+  }, [])
+
+  const getSnapshot = useCallback(() => {
+    const remaining = isRunning && endTimeRef.current
+      ? Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000))
+      : remainingSeconds
+    return {
+      isRunning,
+      remainingSeconds: remaining,
+      endsAt: isRunning ? endTimeRef.current : null,
+    }
+  }, [isRunning, remainingSeconds])
 
   return {
     remainingSeconds,
@@ -105,6 +162,8 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     reset,
     adjustSeconds,
     setSeconds,
+    applyRemoteSession,
+    getSnapshot,
   }
 }
 

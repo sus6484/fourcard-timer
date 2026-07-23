@@ -10,11 +10,10 @@ function cloneGamesList(games) {
   return games.map(cloneGame)
 }
 
-function createDraft({ games, activeGameId, adminPin }) {
+function createDraft({ games, activeGameId }) {
   return {
     games: cloneGamesList(games),
     activeGameId,
-    adminPin,
   }
 }
 
@@ -22,11 +21,13 @@ export default function AdminPanel({
   open,
   games,
   activeGameId,
-  adminPin,
   onClose,
   onSave,
+  onMigrateFromSheets,
   saveError = '',
   saving = false,
+  migrating = false,
+  migrateMessage = '',
 }) {
   const [draft, setDraft] = useState(null)
   const [bulkMinutes, setBulkMinutes] = useState(8)
@@ -40,10 +41,10 @@ export default function AdminPanel({
       setDragOverIndex(null)
       return
     }
-    const nextDraft = createDraft({ games, activeGameId, adminPin })
+    const nextDraft = createDraft({ games, activeGameId })
     setDraft(nextDraft)
     savedSnapshot.current = JSON.stringify(nextDraft)
-  }, [open, games, activeGameId, adminPin])
+  }, [open, games, activeGameId])
 
   useEffect(() => {
     if (!open || !draft) return
@@ -248,19 +249,22 @@ export default function AdminPanel({
         </header>
 
         {saveError && <p className="admin-panel__sync-error">{saveError}</p>}
+        {migrateMessage ? <p className="branch-manager__success">{migrateMessage}</p> : null}
 
         <section className="admin-panel__section">
-          <label className="admin-field">
-            <span>전체 관리자 PIN (4자리)</span>
-            <input
-              type="password"
-              maxLength={4}
-              value={draft.adminPin}
-              onChange={(event) =>
-                updateDraft({ adminPin: event.target.value.replace(/\D/g, '').slice(0, 4) })
-              }
-            />
-          </label>
+          <div className="admin-panel__row admin-panel__row--between">
+            <div>
+              <h3>데이터 이전</h3>
+              <p className="admin-panel__note">기존 구글 시트 프리셋을 Firestore로 한 번 가져옵니다.</p>
+            </div>
+            <button
+              type="button"
+              onClick={onMigrateFromSheets}
+              disabled={migrating || saving || !onMigrateFromSheets}
+            >
+              {migrating ? '가져오는 중…' : '구글 시트에서 가져오기'}
+            </button>
+          </div>
         </section>
 
         {activeGame ? (
@@ -437,45 +441,9 @@ export default function AdminPanel({
           ) : (
             <p>모든 변경 사항이 저장되었습니다.</p>
           )}
-          <p>전체 게임은 저장 시 구글 시트에 반영되어 모든 기기에 동기화됩니다.</p>
+          <p>전체 게임은 저장 시 Firebase에 반영되어 모든 기기에 동기화됩니다.</p>
         </footer>
       </div>
-    </div>
-  )
-}
-
-export function PinModal({ open, onClose, onSubmit, error, title = '관리자 PIN', hint = '' }) {
-  const [pin, setPin] = useState('')
-
-  if (!open) return null
-
-  return (
-    <div className="pin-overlay">
-      <form
-        className="pin-modal"
-        onSubmit={(event) => {
-          event.preventDefault()
-          onSubmit(pin)
-          setPin('')
-        }}
-      >
-        <h2>{title}</h2>
-        {hint ? <p className="pin-modal__hint">{hint}</p> : null}
-        <input
-          autoFocus
-          type="password"
-          inputMode="numeric"
-          maxLength={4}
-          value={pin}
-          placeholder="PIN"
-          onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
-        />
-        {error && <p className="pin-modal__error">{error}</p>}
-        <div className="pin-modal__actions">
-          <button type="button" onClick={onClose}>취소</button>
-          <button type="submit">확인</button>
-        </div>
-      </form>
     </div>
   )
 }

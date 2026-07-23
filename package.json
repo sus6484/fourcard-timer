@@ -12,6 +12,7 @@
     "serve:file": "vite preview --outDir release --host 127.0.0.1 --port 4173"
   },
   "dependencies": {
+    "firebase": "^12.16.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

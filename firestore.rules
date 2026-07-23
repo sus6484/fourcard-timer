@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return signedIn() && userDoc().role == 'admin';
+    }
+
+    function isBranch(branchId) {
+      return signedIn() && userDoc().role == 'branch' && userDoc().branchId == branchId;
+    }
+
+    match /presets/{docId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /branches/{branchId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /sessions/{branchId} {
+      allow read: if isAdmin() || isBranch(branchId);
+      allow write: if isAdmin() || isBranch(branchId);
+    }
+  }
+}

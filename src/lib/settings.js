@@ -198,10 +198,8 @@ export function applyRemoteGlobalSettings(localState, remote) {
     ...localState,
     globalGames: hasRemoteGames ? remoteGames : localState.globalGames,
     activeGlobalGameId,
-    adminPin:
-      typeof remote?.adminPin === 'string'
-        ? normalizeAdminPin(remote.adminPin)
-        : normalizeAdminPin(localState.adminPin),
+    // adminPin은 레거시 localStorage 호환용. 인증은 Firebase Auth로 이전됨.
+    adminPin: normalizeAdminPin(localState.adminPin),
     cloudUpdatedAt: remoteUpdatedAt ?? localState.cloudUpdatedAt ?? null,
   })
 }
