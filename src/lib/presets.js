@@ -131,8 +131,9 @@ export function formatAnte(level) {
 }
 
 export function formatTime(totalSeconds) {
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
+  const safe = Number.isFinite(totalSeconds) ? Math.max(0, Math.floor(totalSeconds)) : 0
+  const minutes = Math.floor(safe / 60)
+  const seconds = safe % 60
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 

@@ -237,10 +237,15 @@ export function selectGlobalGame(state, gameId) {
 }
 
 export function updateGlobalGames(state, games, activeGameId = state.activeGlobalGameId) {
+  const globalGames = sanitizeGames(games)
+  const nextActiveId = globalGames.some((game) => game.id === activeGameId)
+    ? activeGameId
+    : globalGames[0]?.id
+
   return {
     ...state,
-    globalGames: games,
-    activeGlobalGameId: activeGameId,
+    globalGames,
+    activeGlobalGameId: nextActiveId,
   }
 }
 

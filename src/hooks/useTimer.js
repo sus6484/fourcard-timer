@@ -12,12 +12,6 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
   }, [onComplete])
 
   useEffect(() => {
-    setRemainingSeconds(initialSeconds)
-    setIsRunning(false)
-    endTimeRef.current = null
-  }, [initialSeconds])
-
-  useEffect(() => {
     if (!isRunning) return undefined
 
     const tick = () => {
@@ -68,15 +62,16 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
   }, [isRunning, pause, remainingSeconds, start])
 
   const reset = useCallback((seconds = initialSeconds, { autoStart = false } = {}) => {
-    setRemainingSeconds(seconds)
-    if (autoStart) {
-      endTimeRef.current = Date.now() + seconds * 1000
+    const safeSeconds = Math.max(0, Number.isFinite(seconds) ? seconds : 0)
+    setRemainingSeconds(safeSeconds)
+    if (autoStart && safeSeconds > 0) {
+      endTimeRef.current = Date.now() + safeSeconds * 1000
       setIsRunning(true)
-      return { isRunning: true, remainingSeconds: seconds, endsAt: endTimeRef.current }
+      return { isRunning: true, remainingSeconds: safeSeconds, endsAt: endTimeRef.current }
     }
     setIsRunning(false)
     endTimeRef.current = null
-    return { isRunning: false, remainingSeconds: seconds, endsAt: null }
+    return { isRunning: false, remainingSeconds: safeSeconds, endsAt: null }
   }, [initialSeconds])
 
   const adjustSeconds = useCallback((delta) => {
@@ -131,6 +126,11 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     const remoteRemaining = remoteRunning && remoteEndsAt
       ? Math.max(0, Math.ceil((remoteEndsAt - Date.now()) / 1000))
       : Math.max(0, Number(session.remainingSeconds) || 0)
+
+    // 만료된 running 세션은 여기서 멈추지 않고, 호출측에서 레벨 완료로 처리합니다.
+    if (remoteRunning && remoteRemaining <= 0) {
+      return
+    }
 
     suppressCompleteRef.current = true
     setRemainingSeconds(remoteRemaining)

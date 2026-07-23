@@ -81,6 +81,10 @@ export default function AdminPanel({
       ...game,
       levels: game.levels.map((level, levelIndex) => {
         if (levelIndex !== index) return level
+        if (field === 'minutes') {
+          const minutes = Number(value)
+          return { ...level, minutes: Number.isFinite(minutes) && minutes > 0 ? minutes : 1 }
+        }
         return { ...level, [field]: value }
       }),
     }))

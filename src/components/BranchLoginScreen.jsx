@@ -47,6 +47,12 @@ export default function BranchLoginScreen({
     refreshBranches()
   }, [])
 
+  useEffect(() => {
+    if (!canCreateAccounts && mode === 'create') {
+      setMode('login')
+    }
+  }, [canCreateAccounts, mode])
+
   const handleLogin = (event) => {
     event.preventDefault()
     if (loading) return
@@ -88,9 +94,6 @@ export default function BranchLoginScreen({
           <form onSubmit={handleLogin}>
             <p className="login-card__eyebrow">FOURCARD Timer</p>
             <h1 id="branch-login-title">지점 로그인</h1>
-            <p className="login-card__hint">
-              지점을 선택하고 비밀번호를 입력하세요. 로그인한 TV·컴퓨터끼리 타이머가 동기화됩니다.
-            </p>
 
             {!configured && (
               <p className="login-card__error" role="alert">
@@ -145,18 +148,20 @@ export default function BranchLoginScreen({
               {loading ? '로그인 중…' : '로그인'}
             </button>
 
-            <button
-              type="button"
-              className="login-card__secondary"
-              disabled={loading}
-              onClick={() => {
-                setMode('create')
-                setCreateError('')
-                setCreateSuccess('')
-              }}
-            >
-              계정 생성
-            </button>
+            {canCreateAccounts ? (
+              <button
+                type="button"
+                className="login-card__secondary"
+                disabled={loading}
+                onClick={() => {
+                  setMode('create')
+                  setCreateError('')
+                  setCreateSuccess('')
+                }}
+              >
+                계정 생성
+              </button>
+            ) : null}
 
             {onClose ? (
               <button
@@ -173,20 +178,14 @@ export default function BranchLoginScreen({
           <form onSubmit={handleCreate}>
             <p className="login-card__eyebrow">관리자</p>
             <h1 id="branch-login-title">지점 계정 생성</h1>
-            {canCreateAccounts ? (
-              <p className="login-card__hint">새 지점 계정을 만들면 로그인 목록에 바로 추가됩니다.</p>
-            ) : (
-              <p className="login-card__hint">
-                계정 생성은 관리자만 할 수 있습니다. 설정에서 관리자 로그인 후 다시 시도하세요.
-              </p>
-            )}
 
             <label className="login-field">
               <span>지점 이름</span>
               <input
                 type="text"
+                autoFocus
                 value={branchName}
-                disabled={!canCreateAccounts || saving}
+                disabled={saving}
                 onChange={(event) => setBranchName(event.target.value)}
                 placeholder="예: 강남점"
               />
@@ -196,7 +195,7 @@ export default function BranchLoginScreen({
               <input
                 type="text"
                 value={displayName}
-                disabled={!canCreateAccounts || saving}
+                disabled={saving}
                 onChange={(event) => setDisplayName(event.target.value)}
                 placeholder="선택"
               />
@@ -208,7 +207,7 @@ export default function BranchLoginScreen({
                 required
                 autoComplete="off"
                 value={createUsername}
-                disabled={!canCreateAccounts || saving}
+                disabled={saving}
                 onChange={(event) => setCreateUsername(event.target.value)}
                 placeholder="예: gangnam"
               />
@@ -220,7 +219,7 @@ export default function BranchLoginScreen({
                 required
                 autoComplete="new-password"
                 value={createPassword}
-                disabled={!canCreateAccounts || saving}
+                disabled={saving}
                 onChange={(event) => setCreatePassword(event.target.value)}
                 placeholder="4자 이상"
               />
@@ -236,7 +235,7 @@ export default function BranchLoginScreen({
             <button
               type="submit"
               className="login-card__submit"
-              disabled={!canCreateAccounts || saving}
+              disabled={saving}
             >
               {saving ? '생성 중…' : '지점 계정 생성'}
             </button>

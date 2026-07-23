@@ -199,6 +199,7 @@ export async function createBranchAccount({
       displayName: String(displayName || name).trim(),
     })
 
+    // Primary Auth(관리자) 세션으로 Firestore에 기록합니다.
     await setDoc(usersRef(createdUid), {
       username: normalizedUsername,
       role: 'branch',

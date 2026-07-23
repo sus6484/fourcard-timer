@@ -61,8 +61,9 @@ export function subscribeSession(branchId, onData, onError) {
   return onSnapshot(
     sessionRef(branchId),
     (snapshot) => {
+      // 문서가 없으면 빈 00:00 세션을 만들어 덮어쓰지 않습니다.
       if (!snapshot.exists()) {
-        onData(createEmptySession())
+        onData(null)
         return
       }
       onData(createEmptySession(snapshot.data()))

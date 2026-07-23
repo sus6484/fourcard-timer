@@ -39,6 +39,7 @@ import {
   selectGlobalGame,
   updateScreenMemo,
   updateMemoStyle,
+  updateGlobalGames,
 } from './lib/settings.js'
 import {
   publishSession,
@@ -78,11 +79,14 @@ export default function App() {
 
   const autoStartNextLevelRef = useRef(false)
   const skipLevelResetRef = useRef(false)
+  const localAdvanceRef = useRef(false)
   const applyingRemoteRef = useRef(false)
+  const localAuthorityUntilRef = useRef(0)
   const lastPublishedRevisionRef = useRef(0)
   const activeBranchIdRef = useRef('')
   const settingsRef = useRef(settings)
   const levelIndexRef = useRef(levelIndex)
+  const levelsRef = useRef([])
 
   const isAdmin = isAdminSession(authSession)
   const activeBranchId = authSession?.branchId || ''
@@ -154,7 +158,25 @@ export default function App() {
   const levels = activeGame?.levels ?? []
   const currentLevel = levels[levelIndex] ?? levels[0]
   const nextLevel = levels[levelIndex + 1] ?? null
-  const initialSeconds = (currentLevel?.minutes ?? 0) * 60
+  const initialSeconds = Math.max(0, Math.round((Number(currentLevel?.minutes) || 0) * 60))
+
+  useEffect(() => {
+    levelsRef.current = levels
+  }, [levels])
+
+  const levelSeconds = useCallback((level) => {
+    const minutes = Number(level?.minutes)
+    if (!Number.isFinite(minutes) || minutes <= 0) return 0
+    return Math.round(minutes * 60)
+  }, [])
+
+  const findNextPlayableIndex = useCallback((fromIndex, schedule) => {
+    let nextIndex = fromIndex + 1
+    while (nextIndex < schedule.length && levelSeconds(schedule[nextIndex]) <= 0) {
+      nextIndex += 1
+    }
+    return nextIndex
+  }, [levelSeconds])
 
   const publishTimerState = useCallback(async (partial) => {
     const branchId = activeBranchIdRef.current
@@ -182,23 +204,7 @@ export default function App() {
     }
   }, [authSession])
 
-  const handleLevelComplete = useCallback(() => {
-    if (!activeGame) return
-    if (levelIndex < levels.length - 1) {
-      const upcoming = levels[levelIndex + 1]
-      if (upcoming?.isBreak) playBreakTime()
-      else playBlindsUp()
-      autoStartNextLevelRef.current = true
-      setLevelIndex((index) => index + 1)
-    } else {
-      publishTimerState({
-        isRunning: false,
-        endsAt: null,
-        remainingSeconds: 0,
-        levelIndex,
-      })
-    }
-  }, [activeGame, levelIndex, levels, publishTimerState])
+  const completeHandlerRef = useRef(() => {})
 
   const {
     remainingSeconds,
@@ -210,8 +216,50 @@ export default function App() {
     applyRemoteSession,
     getSnapshot,
   } = useTimer(initialSeconds, {
-    onComplete: handleLevelComplete,
+    onComplete: () => completeHandlerRef.current?.(),
   })
+
+  const handleLevelComplete = useCallback(() => {
+    const schedule = levelsRef.current
+    if (!schedule.length) return
+
+    const currentIndex = levelIndexRef.current
+    const nextIndex = findNextPlayableIndex(currentIndex, schedule)
+
+    if (nextIndex < schedule.length) {
+      const upcoming = schedule[nextIndex]
+      if (upcoming?.isBreak) playBreakTime()
+      else playBlindsUp()
+
+      const nextSeconds = levelSeconds(upcoming)
+      localAdvanceRef.current = true
+      autoStartNextLevelRef.current = false
+      // 직후 들어오는 낡은 동기화 스냅샷이 레벨업을 되돌리지 못하게 합니다.
+      localAuthorityUntilRef.current = Date.now() + 2000
+      levelIndexRef.current = nextIndex
+      setLevelIndex(nextIndex)
+
+      const snapshot = reset(nextSeconds, { autoStart: true })
+      publishTimerState({
+        levelIndex: nextIndex,
+        isRunning: snapshot.isRunning,
+        endsAt: snapshot.endsAt,
+        remainingSeconds: snapshot.remainingSeconds,
+        activeGameId: settingsRef.current.activeGlobalGameId,
+      })
+      return
+    }
+
+    localAuthorityUntilRef.current = Date.now() + 2000
+    publishTimerState({
+      isRunning: false,
+      endsAt: null,
+      remainingSeconds: 0,
+      levelIndex: currentIndex,
+    })
+  }, [findNextPlayableIndex, levelSeconds, publishTimerState, reset])
+
+  completeHandlerRef.current = handleLevelComplete
 
   useWakeLock(isRunning)
 
@@ -229,14 +277,21 @@ export default function App() {
   }, [activeGame?.id])
 
   useEffect(() => {
+    if (localAdvanceRef.current) {
+      localAdvanceRef.current = false
+      applyingRemoteRef.current = false
+      return
+    }
+
     if (applyingRemoteRef.current) {
       applyingRemoteRef.current = false
       return
     }
 
+    const seconds = levelSeconds(currentLevel) || initialSeconds
     const autoStart = autoStartNextLevelRef.current
     autoStartNextLevelRef.current = false
-    const snapshot = reset(initialSeconds, { autoStart })
+    const snapshot = reset(seconds, { autoStart: autoStart && seconds > 0 })
 
     if (autoStart && activeBranchIdRef.current) {
       publishTimerState({
@@ -247,7 +302,7 @@ export default function App() {
         activeGameId: settingsRef.current.activeGlobalGameId,
       })
     }
-  }, [activeGame?.id, levelIndex, initialSeconds, reset, publishTimerState])
+  }, [activeGame?.id, levelIndex, initialSeconds, reset, publishTimerState, levelSeconds, currentLevel])
 
   useEffect(() => {
     if (!authSession || !activeBranchId) return undefined
@@ -256,8 +311,59 @@ export default function App() {
       activeBranchId,
       (session) => {
         if (!session) return
-        if (session.revision && session.revision === lastPublishedRevisionRef.current) {
+
+        // 로컬에서 방금 레벨을 넘긴 직후에는 원격 덮어쓰기를 잠시 무시
+        if (Date.now() < localAuthorityUntilRef.current) {
           return
+        }
+
+        const remoteRevision = Number(session.revision) || 0
+        if (remoteRevision && remoteRevision <= lastPublishedRevisionRef.current) {
+          return
+        }
+
+        const remoteLevelIndex = Number(session.levelIndex) || 0
+        const remoteRunning = Boolean(session.isRunning)
+        const remoteEndsAt = typeof session.endsAt === 'number' ? session.endsAt : null
+        const remoteRemaining = remoteRunning && remoteEndsAt
+          ? Math.max(0, Math.ceil((remoteEndsAt - Date.now()) / 1000))
+          : Math.max(0, Number(session.remainingSeconds) || 0)
+
+        // 원격은 아직 running인데 endsAt이 지난 경우 → 로컬에서 레벨 완료 처리
+        if (
+          remoteRunning &&
+          remoteRemaining <= 0 &&
+          remoteLevelIndex === levelIndexRef.current
+        ) {
+          completeHandlerRef.current?.()
+          return
+        }
+
+        // 로컬이 이미 다음 레벨로 넘어간 뒤 도착한 0초 스냅샷은 무시
+        if (
+          !remoteRunning &&
+          remoteRemaining <= 0 &&
+          remoteLevelIndex < levelIndexRef.current
+        ) {
+          return
+        }
+
+        // 같은 레벨의 0초 paused 스냅샷은 자동 레벨업을 가로채지 않도록 무시
+        if (
+          !remoteRunning &&
+          remoteRemaining <= 0 &&
+          remoteLevelIndex === levelIndexRef.current &&
+          remoteLevelIndex < levelsRef.current.length - 1
+        ) {
+          completeHandlerRef.current?.()
+          return
+        }
+
+        if (remoteRevision) {
+          lastPublishedRevisionRef.current = Math.max(
+            lastPublishedRevisionRef.current,
+            remoteRevision,
+          )
         }
 
         applyingRemoteRef.current = true
@@ -276,10 +382,10 @@ export default function App() {
           )
         }
 
-        const nextLevelIndex = Number(session.levelIndex) || 0
-        if (nextLevelIndex !== levelIndexRef.current) {
+        if (remoteLevelIndex !== levelIndexRef.current) {
           skipLevelResetRef.current = true
-          setLevelIndex(nextLevelIndex)
+          levelIndexRef.current = remoteLevelIndex
+          setLevelIndex(remoteLevelIndex)
         }
 
         applyRemoteSession(session)
@@ -301,7 +407,7 @@ export default function App() {
     setGlobalMenuOpen(false)
     if (activeBranchId) {
       const game = settings.globalGames.find((item) => item.id === gameId)
-      const seconds = (game?.levels?.[0]?.minutes ?? 0) * 60
+      const seconds = levelSeconds(game?.levels?.[0])
       publishTimerState({
         activeGameId: gameId,
         levelIndex: 0,
@@ -319,7 +425,7 @@ export default function App() {
       if (levelIndex > 0) {
         const nextIndex = levelIndex - 1
         setLevelIndex(nextIndex)
-        const seconds = (levels[nextIndex]?.minutes ?? 0) * 60
+        const seconds = levelSeconds(levels[nextIndex])
         publishTimerState({
           levelIndex: nextIndex,
           isRunning: false,
@@ -344,9 +450,10 @@ export default function App() {
     }
     if (action === 'next') {
       if (activeGame && levelIndex < levels.length - 1) {
-        const nextIndex = levelIndex + 1
+        const nextIndex = findNextPlayableIndex(levelIndex, levels)
+        if (nextIndex >= levels.length) return
         setLevelIndex(nextIndex)
-        const seconds = (levels[nextIndex]?.minutes ?? 0) * 60
+        const seconds = levelSeconds(levels[nextIndex])
         publishTimerState({
           levelIndex: nextIndex,
           isRunning: false,
@@ -383,7 +490,7 @@ export default function App() {
         setResetConfirm(true)
         return
       }
-      const firstLevelSeconds = (levels[0]?.minutes ?? 0) * 60
+      const firstLevelSeconds = levelSeconds(levels[0])
       setLevelIndex(0)
       reset(firstLevelSeconds)
       setResetConfirm(false)
@@ -445,11 +552,8 @@ export default function App() {
   }
 
   const handleOpenGlobalSettings = () => {
-    if (isAdmin) {
-      setAdminSaveError('')
-      setAdminOpen(true)
-      return
-    }
+    // 설정은 항상 관리자 로그인(관리자 모드)을 거친 뒤에만 게임 수정 패널을 연다.
+    setAdminOpen(false)
     setLoginError('')
     setLoginOpen(true)
   }
@@ -476,20 +580,12 @@ export default function App() {
     setAdminSaveError('')
 
     try {
+      const nextSettings = updateGlobalGames(settings, draft.games, draft.activeGameId)
       const result = await savePresetsToCloud({
-        globalGames: draft.games,
+        globalGames: nextSettings.globalGames,
       })
 
-      persistSettings(
-        withCloudUpdatedAt(
-          {
-            ...settings,
-            globalGames: draft.games,
-            activeGlobalGameId: draft.activeGameId,
-          },
-          result.updatedAt,
-        ),
-      )
+      persistSettings(withCloudUpdatedAt(nextSettings, result.updatedAt))
 
       setGlobalSyncStatus('ready')
       setGlobalSyncError('')
@@ -520,11 +616,11 @@ export default function App() {
         ? 'Firebase 동기화 실패'
         : ''
 
-  const sessionLabel = !authSession
-    ? ''
-    : isAdmin
-      ? '관리자'
-      : authSession?.displayName || authSession?.username || '지점'
+  // 관리자는 하단 상태 버튼에 표시하지 않음 (지점 로그인 시에만 지점명 표시)
+  const sessionLabel =
+    authSession && !isAdmin
+      ? authSession?.displayName || authSession?.username || '지점'
+      : ''
 
   const stageScale = useFitScale(DESIGN_WIDTH, DESIGN_HEIGHT)
   const firebaseReady = isFirebaseConfigured()
