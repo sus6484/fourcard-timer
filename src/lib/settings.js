@@ -39,7 +39,31 @@ function sanitizeGame(game, index) {
     levels,
     memo: typeof game.memo === 'string' ? game.memo : '',
     custom: Boolean(game.custom),
+    branchId: normalizeBranchId(game.branchId),
   }
+}
+
+/** null / '' → 전체 매장(공용), 그 외는 지점 ID */
+export function normalizeBranchId(value) {
+  if (value == null) return null
+  const trimmed = String(value).trim()
+  return trimmed ? trimmed : null
+}
+
+/**
+ * 지점 화면에 노출할 프리셋만 남깁니다.
+ * - branchId 없음(공용) 또는 현재 지점과 일치하는 게임만 허용
+ * - viewerBranchId가 없으면(관리자) 전체 반환
+ */
+export function filterGamesForBranch(games, viewerBranchId) {
+  if (!Array.isArray(games)) return []
+  const viewerId = normalizeBranchId(viewerBranchId)
+  if (!viewerId) return games
+
+  return games.filter((game) => {
+    const assigned = normalizeBranchId(game?.branchId)
+    return !assigned || assigned === viewerId
+  })
 }
 
 function sanitizeGames(games) {
@@ -184,15 +208,33 @@ export function loadSettings() {
   }
 }
 
-export function applyRemoteGlobalSettings(localState, remote) {
-  const remoteGames = Array.isArray(remote?.globalGames) ? remote.globalGames : []
+export function applyRemoteGlobalSettings(localState, remote, { branchId = null } = {}) {
+  const allRemoteGames = Array.isArray(remote?.globalGames) ? remote.globalGames : []
+  const viewerBranchId = normalizeBranchId(branchId)
+  const remoteGames = viewerBranchId
+    ? filterGamesForBranch(allRemoteGames, viewerBranchId)
+    : allRemoteGames
   const hasRemoteGames = remoteGames.length > 0
   const remoteUpdatedAt = typeof remote?.updatedAt === 'string' ? remote.updatedAt : null
   const activeGlobalGameId = hasRemoteGames
-    ? localState.globalGames.some((game) => game.id === localState.activeGlobalGameId)
+    ? remoteGames.some((game) => game.id === localState.activeGlobalGameId)
       ? localState.activeGlobalGameId
       : remoteGames[0]?.id ?? localState.activeGlobalGameId
     : localState.activeGlobalGameId
+
+  // 원격에 문서가 있어도 이 지점에 보이는 게임이 없으면 로컬의 타 지점 전용 게임을 제거
+  if (viewerBranchId && allRemoteGames.length > 0 && !hasRemoteGames) {
+    const localVisible = filterGamesForBranch(localState.globalGames, viewerBranchId)
+    return normalizeState({
+      ...localState,
+      globalGames: localVisible.length > 0 ? localVisible : defaultGlobalGames(),
+      activeGlobalGameId: localVisible.some((game) => game.id === localState.activeGlobalGameId)
+        ? localState.activeGlobalGameId
+        : (localVisible[0]?.id ?? localState.activeGlobalGameId),
+      adminPin: normalizeAdminPin(localState.adminPin),
+      cloudUpdatedAt: remoteUpdatedAt ?? localState.cloudUpdatedAt ?? null,
+    })
+  }
 
   return normalizeState({
     ...localState,

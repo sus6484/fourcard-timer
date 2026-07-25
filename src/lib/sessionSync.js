@@ -1,5 +1,6 @@
 import { doc, onSnapshot, setDoc } from 'firebase/firestore'
 import { getFirebaseDb, isFirebaseConfigured } from './firebase.js'
+import { createResilientSnapshot } from './resilientSnapshot.js'
 
 function sessionRef(branchId) {
   return doc(getFirebaseDb(), 'sessions', branchId)
@@ -48,28 +49,38 @@ export async function publishSession(branchId, patch, { uid } = {}) {
   return { updatedAt }
 }
 
-export function subscribeSession(branchId, onData, onError) {
+/**
+ * @param {string} branchId
+ * @param {(data: object | null) => void} onData
+ * @param {(error: Error) => void} [onError]
+ * @param {(status: 'connecting' | 'connected' | 'reconnecting' | 'offline') => void} [onStatus]
+ */
+export function subscribeSession(branchId, onData, onError, onStatus) {
   if (!branchId) {
     onData(null)
+    onStatus?.('offline')
     return () => {}
   }
   if (!isFirebaseConfigured()) {
     onError?.(new Error('Firebase 설정이 없습니다.'))
+    onStatus?.('offline')
     return () => {}
   }
 
-  return onSnapshot(
-    sessionRef(branchId),
-    (snapshot) => {
-      // 문서가 없으면 빈 00:00 세션을 만들어 덮어쓰지 않습니다.
-      if (!snapshot.exists()) {
-        onData(null)
-        return
-      }
-      onData(createEmptySession(snapshot.data()))
-    },
-    (error) => {
-      onError?.(error)
-    },
+  return createResilientSnapshot(
+    (onNext, onSnapError) =>
+      onSnapshot(
+        sessionRef(branchId),
+        (snapshot) => {
+          // 문서가 없으면 빈 00:00 세션을 만들어 덮어쓰지 않습니다.
+          if (!snapshot.exists()) {
+            onNext(null)
+            return
+          }
+          onNext(createEmptySession(snapshot.data()))
+        },
+        onSnapError,
+      ),
+    { onData, onError, onStatus },
   )
 }

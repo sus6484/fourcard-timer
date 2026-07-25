@@ -33,6 +33,7 @@ import {
 import {
   applyRemoteGlobalSettings,
   withCloudUpdatedAt,
+  filterGamesForBranch,
   getActiveGame,
   loadSettings,
   saveSettings,
@@ -68,6 +69,8 @@ export default function App() {
   const [memoEditing, setMemoEditing] = useState(false)
   const [globalSyncStatus, setGlobalSyncStatus] = useState('idle')
   const [globalSyncError, setGlobalSyncError] = useState('')
+  const [presetsLinkStatus, setPresetsLinkStatus] = useState('idle')
+  const [sessionLinkStatus, setSessionLinkStatus] = useState('idle')
   const [adminSaveError, setAdminSaveError] = useState('')
   const [adminSaving, setAdminSaving] = useState(false)
   const [audioReady, setAudioReady] = useState(false)
@@ -103,6 +106,21 @@ export default function App() {
     activeBranchIdRef.current = activeBranchId
   }, [activeBranchId])
 
+  // 지점 로그인 직후 localStorage에 남아 있는 타 지점 전용 프리셋을 바로 가립니다.
+  useEffect(() => {
+    if (!authSession || isAdmin) return
+    if (!activeBranchId) return
+
+    setSettings((current) => {
+      const filtered = filterGamesForBranch(current.globalGames, activeBranchId)
+      const activeVisible = filtered.some((game) => game.id === current.activeGlobalGameId)
+      if (filtered.length === current.globalGames.length && activeVisible) {
+        return current
+      }
+      return updateGlobalGames(current, filtered, current.activeGlobalGameId)
+    })
+  }, [authSession, isAdmin, activeBranchId])
+
   useEffect(() => {
     if (!isFirebaseConfigured()) {
       return undefined
@@ -122,25 +140,33 @@ export default function App() {
   useEffect(() => {
     if (!authSession) {
       setGlobalSyncStatus('idle')
+      setPresetsLinkStatus('idle')
       return undefined
     }
     if (isFileProtocol()) {
       setGlobalSyncStatus('local')
+      setPresetsLinkStatus('offline')
       return undefined
     }
     if (!isFirebaseConfigured()) {
       setGlobalSyncStatus('error')
       setGlobalSyncError('Firebase 설정이 없습니다. .env의 VITE_FIREBASE_* 값을 확인하세요.')
+      setPresetsLinkStatus('offline')
       return undefined
     }
 
     setGlobalSyncStatus('loading')
     setGlobalSyncError('')
+    setPresetsLinkStatus('connecting')
+
+    const viewerBranchId = isAdminSession(authSession) ? null : authSession?.branchId || null
 
     const unsubscribe = subscribePresets(
       (remote) => {
         if (!remote.missing) {
-          setSettings((current) => applyRemoteGlobalSettings(current, remote))
+          setSettings((current) =>
+            applyRemoteGlobalSettings(current, remote, { branchId: viewerBranchId }),
+          )
         }
         setGlobalSyncStatus('ready')
         setGlobalSyncError('')
@@ -148,6 +174,18 @@ export default function App() {
       (error) => {
         setGlobalSyncStatus('error')
         setGlobalSyncError(error?.message ?? '전체 게임을 불러오지 못했습니다.')
+      },
+      (status) => {
+        setPresetsLinkStatus(status)
+        if (status === 'connected') {
+          setGlobalSyncStatus('ready')
+          setGlobalSyncError('')
+        } else if (status === 'reconnecting' || status === 'connecting') {
+          setGlobalSyncStatus((current) => (current === 'ready' ? 'ready' : 'loading'))
+        } else if (status === 'offline') {
+          setGlobalSyncStatus('error')
+          setGlobalSyncError('네트워크 연결이 끊어졌습니다. 재연결을 시도합니다…')
+        }
       },
     )
 
@@ -305,7 +343,12 @@ export default function App() {
   }, [activeGame?.id, levelIndex, initialSeconds, reset, publishTimerState, levelSeconds, currentLevel])
 
   useEffect(() => {
-    if (!authSession || !activeBranchId) return undefined
+    if (!authSession || !activeBranchId) {
+      setSessionLinkStatus('idle')
+      return undefined
+    }
+
+    setSessionLinkStatus('connecting')
 
     const unsubscribe = subscribeSession(
       activeBranchId,
@@ -392,6 +435,9 @@ export default function App() {
       },
       (error) => {
         console.log('[session] subscribe failed:', error)
+      },
+      (status) => {
+        setSessionLinkStatus(status)
       },
     )
 
@@ -622,6 +668,29 @@ export default function App() {
       ? authSession?.displayName || authSession?.username || '지점'
       : ''
 
+  const connectionBadge = useMemo(() => {
+    if (!authSession) {
+      return { tone: 'local', icon: '🔴', label: '로컬 모드' }
+    }
+    if (isFileProtocol() || !isFirebaseConfigured()) {
+      return { tone: 'local', icon: '🔴', label: '로컬 모드' }
+    }
+
+    const links = [presetsLinkStatus]
+    if (activeBranchId) links.push(sessionLinkStatus)
+
+    if (links.some((status) => status === 'offline')) {
+      return { tone: 'offline', icon: '🔴', label: '오프라인' }
+    }
+    if (links.some((status) => status === 'reconnecting' || status === 'connecting' || status === 'idle')) {
+      return { tone: 'reconnecting', icon: '🟡', label: '재연결 중' }
+    }
+    if (links.every((status) => status === 'connected')) {
+      return { tone: 'synced', icon: '🟢', label: '동기화 중' }
+    }
+    return { tone: 'offline', icon: '🔴', label: '오프라인' }
+  }, [authSession, activeBranchId, presetsLinkStatus, sessionLinkStatus])
+
   const stageScale = useFitScale(DESIGN_WIDTH, DESIGN_HEIGHT)
   const firebaseReady = isFirebaseConfigured()
 
@@ -695,6 +764,22 @@ export default function App() {
               {globalSyncStatus === 'error' && globalSyncError ? `: ${globalSyncError}` : ''}
             </p>
           )}
+
+          <div
+            className={`connection-badge connection-badge--${connectionBadge.tone}`}
+            role="status"
+            aria-live="polite"
+            title={
+              authSession
+                ? `프리셋: ${presetsLinkStatus}${activeBranchId ? ` / 세션: ${sessionLinkStatus}` : ''}`
+                : '지점 로그인 후 Firebase와 동기화됩니다'
+            }
+          >
+            <span className="connection-badge__icon" aria-hidden="true">
+              {connectionBadge.icon}
+            </span>
+            <span className="connection-badge__label">{connectionBadge.label}</span>
+          </div>
 
           <main className="timer-screen" aria-hidden={!audioReady}>
             <aside

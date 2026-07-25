@@ -13,6 +13,7 @@ export function createGame(id, name, levels, options = {}) {
     levels: normalizeScheduleLevels(levels),
     memo: options.memo ?? '',
     custom: options.custom ?? false,
+    branchId: options.branchId ?? null,
   }
 }
 
@@ -153,6 +154,7 @@ export function getSecondsUntilNextBreak(levels, levelIndex, remainingSeconds) {
 export function cloneGame(game) {
   return {
     ...game,
+    branchId: game?.branchId ?? null,
     levels: game.levels.map((level) => ({ ...level })),
   }
 }

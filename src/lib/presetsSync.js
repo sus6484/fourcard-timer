@@ -1,5 +1,6 @@
 import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore'
 import { getFirebaseDb, isFirebaseConfigured } from './firebase.js'
+import { createResilientSnapshot } from './resilientSnapshot.js'
 
 export const PRESETS_DOC_PATH = ['presets', 'global']
 
@@ -60,23 +61,31 @@ export async function savePresetsToCloud({ globalGames }) {
   return { updatedAt }
 }
 
-export function subscribePresets(onData, onError) {
+/**
+ * @param {(data: object) => void} onData
+ * @param {(error: Error) => void} [onError]
+ * @param {(status: 'connecting' | 'connected' | 'reconnecting' | 'offline') => void} [onStatus]
+ */
+export function subscribePresets(onData, onError, onStatus) {
   if (!isFirebaseConfigured()) {
     onError?.(new Error('Firebase 설정이 없습니다. .env의 VITE_FIREBASE_* 값을 확인하세요.'))
+    onStatus?.('offline')
     return () => {}
   }
 
-  return onSnapshot(
-    presetsRef(),
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onData({ globalGames: [], updatedAt: null, missing: true })
-        return
-      }
-      onData({ ...normalizeRemotePayload(snapshot.data()), missing: false })
-    },
-    (error) => {
-      onError?.(error)
-    },
+  return createResilientSnapshot(
+    (onNext, onSnapError) =>
+      onSnapshot(
+        presetsRef(),
+        (snapshot) => {
+          if (!snapshot.exists()) {
+            onNext({ globalGames: [], updatedAt: null, missing: true })
+            return
+          }
+          onNext({ ...normalizeRemotePayload(snapshot.data()), missing: false })
+        },
+        onSnapError,
+      ),
+    { onData, onError, onStatus },
   )
 }

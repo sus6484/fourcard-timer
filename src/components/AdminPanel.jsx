@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { listBranches } from '../lib/auth.js'
 import { cloneGame, createBreak, createGame, createLevel, duplicateGame, getPokerLevelNumber, normalizeScheduleLevels } from '../lib/presets.js'
+import { normalizeBranchId } from '../lib/settings.js'
 
 function emptyLevel(levels) {
   const pokerCount = levels.filter((level) => !level.isBreak).length
@@ -17,6 +19,13 @@ function createDraft({ games, activeGameId }) {
   }
 }
 
+function branchLabel(branches, branchId) {
+  const id = normalizeBranchId(branchId)
+  if (!id) return '공용'
+  const found = branches.find((branch) => branch.id === id)
+  return found?.name || id
+}
+
 export default function AdminPanel({
   open,
   games,
@@ -30,6 +39,8 @@ export default function AdminPanel({
   const [bulkMinutes, setBulkMinutes] = useState(8)
   const [draggingIndex, setDraggingIndex] = useState(null)
   const [dragOverIndex, setDragOverIndex] = useState(null)
+  const [branches, setBranches] = useState([])
+  const [branchesError, setBranchesError] = useState('')
   const savedSnapshot = useRef('')
 
   useEffect(() => {
@@ -44,6 +55,27 @@ export default function AdminPanel({
   }, [open, games, activeGameId])
 
   useEffect(() => {
+    if (!open) return undefined
+
+    let cancelled = false
+    setBranchesError('')
+    listBranches()
+      .then((next) => {
+        if (!cancelled) setBranches(next)
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setBranches([])
+          setBranchesError(error?.message ?? '지점 목록을 불러오지 못했습니다.')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
+  useEffect(() => {
     if (!open || !draft) return
     const game = draft.games.find((g) => g.id === draft.activeGameId) ?? draft.games[0]
     const firstPlayLevel = game?.levels?.find((level) => !level.isBreak)
@@ -56,6 +88,11 @@ export default function AdminPanel({
     if (!draft) return false
     return JSON.stringify(draft) !== savedSnapshot.current
   }, [draft])
+
+  const sortedBranches = useMemo(
+    () => [...branches].sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? ''), 'ko')),
+    [branches],
+  )
 
   if (!open || !draft) return null
 
@@ -199,7 +236,10 @@ export default function AdminPanel({
   }
 
   const handleCreate = () => {
-    const game = createGame(`custom-${Date.now()}`, '새 게임', [createLevel(1, 8, 100, 200)], { custom: true })
+    const game = createGame(`custom-${Date.now()}`, '새 게임', [createLevel(1, 8, 100, 200)], {
+      custom: true,
+      branchId: null,
+    })
     updateDraft((prev) => ({
       ...prev,
       games: [...prev.games, game],
@@ -250,6 +290,7 @@ export default function AdminPanel({
         </header>
 
         {saveError && <p className="admin-panel__sync-error">{saveError}</p>}
+        {branchesError && <p className="admin-panel__sync-error">{branchesError}</p>}
 
         {activeGame ? (
           <>
@@ -263,7 +304,7 @@ export default function AdminPanel({
                   >
                     {draft.games.map((game) => (
                       <option key={game.id} value={game.id}>
-                        {game.name}
+                        {game.name} ({branchLabel(sortedBranches, game.branchId)})
                       </option>
                     ))}
                   </select>
@@ -273,14 +314,32 @@ export default function AdminPanel({
                 <button type="button" onClick={handleDelete} disabled={draft.games.length <= 1}>삭제</button>
               </div>
 
-              <label className="admin-field">
-                <span>게임 이름</span>
-                <input
-                  type="text"
-                  value={activeGame.name}
-                  onChange={(event) => updateActiveGame({ name: event.target.value })}
-                />
-              </label>
+              <div className="admin-panel__row admin-panel__row--name-branch">
+                <label className="admin-field admin-field--grow">
+                  <span>게임 이름</span>
+                  <input
+                    type="text"
+                    value={activeGame.name}
+                    onChange={(event) => updateActiveGame({ name: event.target.value })}
+                  />
+                </label>
+                <label className="admin-field admin-field--branch">
+                  <span>매장(지점) 선택</span>
+                  <select
+                    value={normalizeBranchId(activeGame.branchId) ?? ''}
+                    onChange={(event) =>
+                      updateActiveGame({ branchId: normalizeBranchId(event.target.value) })
+                    }
+                  >
+                    <option value="">전체 매장(공용)</option>
+                    {sortedBranches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name || branch.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
 
             </section>
 
@@ -425,7 +484,10 @@ export default function AdminPanel({
           ) : (
             <p>모든 변경 사항이 저장되었습니다.</p>
           )}
-          <p>전체 게임은 저장 시 Firebase에 반영되어 모든 기기에 동기화됩니다.</p>
+          <p>
+            저장 시 Firebase에 반영됩니다. &apos;전체 매장(공용)&apos;은 모든 지점에,
+            특정 지점을 고르면 해당 지점에만 게임이 보입니다.
+          </p>
         </footer>
       </div>
     </div>
