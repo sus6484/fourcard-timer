@@ -86,13 +86,20 @@ export default function App() {
   const applyingRemoteRef = useRef(false)
   const localAuthorityUntilRef = useRef(0)
   const lastPublishedRevisionRef = useRef(0)
+  const lastTimerSyncKeyRef = useRef('')
   const activeBranchIdRef = useRef('')
+  const authUidRef = useRef(authSession?.uid || '')
   const settingsRef = useRef(settings)
   const levelIndexRef = useRef(levelIndex)
   const levelsRef = useRef([])
+  const resetRef = useRef(null)
+  const publishTimerStateRef = useRef(null)
 
   const isAdmin = isAdminSession(authSession)
   const activeBranchId = authSession?.branchId || ''
+  const authUid = authSession?.uid || ''
+  // 프리셋 구독은 uid/지점만 바뀔 때 재연결 (auth 객체 참조 변경으로는 재구독하지 않음)
+  const presetsViewerBranchId = isAdmin ? null : activeBranchId || null
 
   useEffect(() => {
     settingsRef.current = settings
@@ -106,9 +113,13 @@ export default function App() {
     activeBranchIdRef.current = activeBranchId
   }, [activeBranchId])
 
+  useEffect(() => {
+    authUidRef.current = authUid
+  }, [authUid])
+
   // 지점 로그인 직후 localStorage에 남아 있는 타 지점 전용 프리셋을 바로 가립니다.
   useEffect(() => {
-    if (!authSession || isAdmin) return
+    if (!authUid || isAdmin) return
     if (!activeBranchId) return
 
     setSettings((current) => {
@@ -119,7 +130,7 @@ export default function App() {
       }
       return updateGlobalGames(current, filtered, current.activeGlobalGameId)
     })
-  }, [authSession, isAdmin, activeBranchId])
+  }, [authUid, isAdmin, activeBranchId])
 
   useEffect(() => {
     if (!isFirebaseConfigured()) {
@@ -128,7 +139,22 @@ export default function App() {
 
     const unsubscribe = subscribeAuth(
       (session) => {
-        setAuthSession(session)
+        // 동일 계정의 프로필 재전달은 state를 유지해 하위 이펙트/타이머 리셋을 막음
+        setAuthSession((prev) => {
+          if (!prev && !session) return prev
+          if (
+            prev &&
+            session &&
+            prev.uid === session.uid &&
+            prev.branchId === session.branchId &&
+            prev.role === session.role &&
+            prev.displayName === session.displayName &&
+            prev.username === session.username
+          ) {
+            return prev
+          }
+          return session
+        })
       },
       (error) => {
         setLoginError(error?.message ?? '인증 상태를 확인하지 못했습니다.')
@@ -138,7 +164,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!authSession) {
+    if (!authUid) {
       setGlobalSyncStatus('idle')
       setPresetsLinkStatus('idle')
       return undefined
@@ -159,13 +185,11 @@ export default function App() {
     setGlobalSyncError('')
     setPresetsLinkStatus('connecting')
 
-    const viewerBranchId = isAdminSession(authSession) ? null : authSession?.branchId || null
-
     const unsubscribe = subscribePresets(
       (remote) => {
         if (!remote.missing) {
           setSettings((current) =>
-            applyRemoteGlobalSettings(current, remote, { branchId: viewerBranchId }),
+            applyRemoteGlobalSettings(current, remote, { branchId: presetsViewerBranchId }),
           )
         }
         setGlobalSyncStatus('ready')
@@ -190,7 +214,7 @@ export default function App() {
     )
 
     return unsubscribe
-  }, [authSession])
+  }, [authUid, presetsViewerBranchId])
 
   const activeGame = useMemo(() => getActiveGame(settings), [settings])
   const levels = activeGame?.levels ?? []
@@ -218,7 +242,8 @@ export default function App() {
 
   const publishTimerState = useCallback(async (partial) => {
     const branchId = activeBranchIdRef.current
-    if (!branchId || !authSession) return
+    const uid = authUidRef.current
+    if (!branchId || !uid) return
 
     const revision = Date.now()
     lastPublishedRevisionRef.current = revision
@@ -235,12 +260,12 @@ export default function App() {
           revision,
           ...partial,
         },
-        { uid: authSession.uid },
+        { uid },
       )
     } catch (error) {
       console.log('[session] publish failed:', error)
     }
-  }, [authSession])
+  }, [])
 
   const completeHandlerRef = useRef(() => {})
 
@@ -256,6 +281,9 @@ export default function App() {
   } = useTimer(initialSeconds, {
     onComplete: () => completeHandlerRef.current?.(),
   })
+
+  resetRef.current = reset
+  publishTimerStateRef.current = publishTimerState
 
   const handleLevelComplete = useCallback(() => {
     const schedule = levelsRef.current
@@ -314,25 +342,37 @@ export default function App() {
     setResetConfirm(false)
   }, [activeGame?.id])
 
+  // 게임/레벨/지속시간이 실제로 바뀔 때만 로컬 타이머를 reset.
+  // currentLevel 객체·publishTimerState 콜백 참조 변경으로는 절대 리셋하지 않음.
   useEffect(() => {
+    const syncKey = `${activeGame?.id ?? ''}:${levelIndex}:${initialSeconds}`
+
     if (localAdvanceRef.current) {
       localAdvanceRef.current = false
       applyingRemoteRef.current = false
+      lastTimerSyncKeyRef.current = syncKey
       return
     }
 
     if (applyingRemoteRef.current) {
       applyingRemoteRef.current = false
+      lastTimerSyncKeyRef.current = syncKey
       return
     }
 
-    const seconds = levelSeconds(currentLevel) || initialSeconds
+    // Firebase 프리셋 재수신 등으로 같은 키인데 effect만 다시 돈 경우 방어
+    if (lastTimerSyncKeyRef.current === syncKey) {
+      return
+    }
+    lastTimerSyncKeyRef.current = syncKey
+
+    const seconds = initialSeconds
     const autoStart = autoStartNextLevelRef.current
     autoStartNextLevelRef.current = false
-    const snapshot = reset(seconds, { autoStart: autoStart && seconds > 0 })
+    const snapshot = resetRef.current?.(seconds, { autoStart: autoStart && seconds > 0 })
 
-    if (autoStart && activeBranchIdRef.current) {
-      publishTimerState({
+    if (autoStart && activeBranchIdRef.current && snapshot) {
+      publishTimerStateRef.current?.({
         levelIndex: levelIndexRef.current,
         isRunning: snapshot.isRunning,
         endsAt: snapshot.endsAt,
@@ -340,10 +380,10 @@ export default function App() {
         activeGameId: settingsRef.current.activeGlobalGameId,
       })
     }
-  }, [activeGame?.id, levelIndex, initialSeconds, reset, publishTimerState, levelSeconds, currentLevel])
+  }, [activeGame?.id, levelIndex, initialSeconds])
 
   useEffect(() => {
-    if (!authSession || !activeBranchId) {
+    if (!authUid || !activeBranchId) {
       setSessionLinkStatus('idle')
       return undefined
     }
@@ -442,7 +482,7 @@ export default function App() {
     )
 
     return unsubscribe
-  }, [authSession, activeBranchId, applyRemoteSession])
+  }, [authUid, activeBranchId, applyRemoteSession])
 
   const persistSettings = (nextSettings) => {
     setSettings(nextSettings)

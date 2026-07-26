@@ -208,6 +208,14 @@ export function loadSettings() {
   }
 }
 
+function sameGamesContent(left, right) {
+  try {
+    return JSON.stringify(left) === JSON.stringify(right)
+  } catch {
+    return false
+  }
+}
+
 export function applyRemoteGlobalSettings(localState, remote, { branchId = null } = {}) {
   const allRemoteGames = Array.isArray(remote?.globalGames) ? remote.globalGames : []
   const viewerBranchId = normalizeBranchId(branchId)
@@ -225,7 +233,7 @@ export function applyRemoteGlobalSettings(localState, remote, { branchId = null 
   // 원격에 문서가 있어도 이 지점에 보이는 게임이 없으면 로컬의 타 지점 전용 게임을 제거
   if (viewerBranchId && allRemoteGames.length > 0 && !hasRemoteGames) {
     const localVisible = filterGamesForBranch(localState.globalGames, viewerBranchId)
-    return normalizeState({
+    const next = normalizeState({
       ...localState,
       globalGames: localVisible.length > 0 ? localVisible : defaultGlobalGames(),
       activeGlobalGameId: localVisible.some((game) => game.id === localState.activeGlobalGameId)
@@ -234,9 +242,18 @@ export function applyRemoteGlobalSettings(localState, remote, { branchId = null 
       adminPin: normalizeAdminPin(localState.adminPin),
       cloudUpdatedAt: remoteUpdatedAt ?? localState.cloudUpdatedAt ?? null,
     })
+    // 내용이 같으면 기존 참조를 유지해 타이머 reset 이펙트가 불필요하게 돌지 않게 함
+    if (
+      localState.cloudUpdatedAt === next.cloudUpdatedAt &&
+      localState.activeGlobalGameId === next.activeGlobalGameId &&
+      sameGamesContent(localState.globalGames, next.globalGames)
+    ) {
+      return localState
+    }
+    return next
   }
 
-  return normalizeState({
+  const next = normalizeState({
     ...localState,
     globalGames: hasRemoteGames ? remoteGames : localState.globalGames,
     activeGlobalGameId,
@@ -244,6 +261,17 @@ export function applyRemoteGlobalSettings(localState, remote, { branchId = null 
     adminPin: normalizeAdminPin(localState.adminPin),
     cloudUpdatedAt: remoteUpdatedAt ?? localState.cloudUpdatedAt ?? null,
   })
+
+  // 헬스 재구독 등으로 동일 문서가 다시 오면 새 객체로 갈아끼우지 않음
+  if (
+    localState.cloudUpdatedAt === next.cloudUpdatedAt &&
+    localState.activeGlobalGameId === next.activeGlobalGameId &&
+    sameGamesContent(localState.globalGames, next.globalGames)
+  ) {
+    return localState
+  }
+
+  return next
 }
 
 export function withCloudUpdatedAt(state, updatedAt) {
