@@ -869,20 +869,6 @@ export default function App() {
                 >
                   {memoOpen ? '닫기' : '메모'}
                 </button>
-                <label className="memo-panel__voice">
-                  <select
-                    className="memo-panel__voice-select"
-                    value={announcementVoice}
-                    aria-label="안내 음성 선택"
-                    onChange={(event) => {
-                      const next = setAnnouncementVoice(Number(event.target.value))
-                      setAnnouncementVoiceState(next)
-                    }}
-                  >
-                    <option value={1}>Voice 1</option>
-                    <option value={2}>Voice 2</option>
-                  </select>
-                </label>
                 {memoEditing ? (
                   <button
                     type="button"
@@ -903,6 +889,20 @@ export default function App() {
                     수정
                   </button>
                 )}
+                <label className="memo-panel__voice">
+                  <select
+                    className="memo-panel__voice-select"
+                    value={announcementVoice}
+                    aria-label="안내 음성 선택"
+                    onChange={(event) => {
+                      const next = setAnnouncementVoice(Number(event.target.value))
+                      setAnnouncementVoiceState(next)
+                    }}
+                  >
+                    <option value={1}>Voice 1</option>
+                    <option value={2}>Voice 2</option>
+                  </select>
+                </label>
               </div>
               <MemoPanel
                 open={memoOpen}

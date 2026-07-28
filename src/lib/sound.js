@@ -55,6 +55,10 @@ export function setAnnouncementVoice(voice) {
   } catch {
     // ignore quota / private mode
   }
+  // Resolve + log the mapped TTS voice as soon as the selection changes.
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    pickKoreanTtsVoice(window.speechSynthesis.getVoices(), next)
+  }
   return next
 }
 
@@ -67,29 +71,59 @@ function resolveSoundName(baseName, voice = getAnnouncementVoice()) {
   return `${baseName}-${voiceGender(voice)}`
 }
 
+function isKoreanLang(lang) {
+  const value = String(lang || '').toLowerCase()
+  return value === 'ko' || value === 'ko-kr' || value.startsWith('ko-')
+}
+
+function isFemaleVoiceName(name) {
+  return /heami|여성|여자|female|woman|girl|sunhi|yuna|sora|ji\.?\s*min|jimin/i.test(
+    String(name || ''),
+  )
+}
+
+function isMaleVoiceName(name) {
+  const value = String(name || '').toLowerCase()
+  // Exclude female names first so "Female" is never treated as male.
+  if (isFemaleVoiceName(value)) return false
+  return /injoon|남성|남자|\bmale\b|\bman\b|\bboy\b|bongjin|hyunsu|minho/.test(value)
+}
+
 /**
  * Pick a Korean SpeechSynthesis voice matching the selected gender.
- * Voice 1 → female, Voice 2 → male. Falls back to any ko voice, then default.
+ * Voice 1 → female, Voice 2 → male. Falls back to a different Korean index for Voice 2.
  */
 export function pickKoreanTtsVoice(voices, voice = getAnnouncementVoice()) {
   const list = Array.isArray(voices) ? voices : []
-  const korean = list.filter((v) => {
-    const lang = String(v.lang || '').toLowerCase()
-    return lang === 'ko' || lang.startsWith('ko-')
-  })
+  const korean = list.filter((v) => isKoreanLang(v.lang))
+
+  console.log(
+    '현재 사용 가능한 한국어 목소리 목록',
+    korean.map((v) => ({ name: v.name, lang: v.lang })),
+  )
 
   const preferFemale = voiceGender(voice) === 'female'
-  const genderMatched = korean.filter((v) => {
-    const name = String(v.name || '').toLowerCase()
-    const isFemale =
-      /female|woman|girl|여성|여자|heami|sunhi|yuna|sora|ji.min|jimin/.test(name)
-    const isMale =
-      /male|man|boy|남성|남자|injoon|bongjin|hyunsu|minho/.test(name)
-    if (preferFemale) return isFemale && !isMale
-    return isMale && !isFemale
-  })
+  let selected = null
 
-  return genderMatched[0] || korean[0] || list[0] || null
+  if (preferFemale) {
+    selected = korean.find((v) => isFemaleVoiceName(v.name)) || korean[0] || null
+  } else {
+    selected = korean.find((v) => isMaleVoiceName(v.name))
+
+    if (!selected && korean.length > 0) {
+      // Guarantee Voice 2 differs from Voice 1 when no explicit male voice exists.
+      const femaleVoice =
+        korean.find((v) => isFemaleVoiceName(v.name)) || korean[0]
+      selected =
+        korean[korean.length - 1] !== femaleVoice
+          ? korean[korean.length - 1]
+          : korean.find((v) => v !== femaleVoice) || korean[0]
+    }
+  }
+
+  selected = selected || korean[0] || list[0] || null
+  console.log('최종 선택된 목소리 이름', selected?.name ?? null)
+  return selected
 }
 
 /**
