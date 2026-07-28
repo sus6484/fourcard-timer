@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { syncedNow } from '../lib/serverClock.js'
 
 export function useTimer(initialSeconds, { onComplete } = {}) {
   const [remainingSeconds, setRemainingSeconds] = useState(initialSeconds)
@@ -18,7 +19,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
       const endTime = endTimeRef.current
       if (!endTime) return
 
-      const nextRemaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000))
+      const nextRemaining = Math.max(0, Math.ceil((endTime - syncedNow()) / 1000))
       setRemainingSeconds(nextRemaining)
 
       if (nextRemaining <= 0) {
@@ -37,7 +38,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
   }, [isRunning])
 
   const start = useCallback(() => {
-    endTimeRef.current = Date.now() + remainingSeconds * 1000
+    endTimeRef.current = syncedNow() + remainingSeconds * 1000
     setIsRunning(true)
     return endTimeRef.current
   }, [remainingSeconds])
@@ -46,7 +47,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     if (!isRunning || !endTimeRef.current) {
       return remainingSeconds
     }
-    const nextRemaining = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000))
+    const nextRemaining = Math.max(0, Math.ceil((endTimeRef.current - syncedNow()) / 1000))
     setRemainingSeconds(nextRemaining)
     setIsRunning(false)
     endTimeRef.current = null
@@ -65,7 +66,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     const safeSeconds = Math.max(0, Number.isFinite(seconds) ? seconds : 0)
     setRemainingSeconds(safeSeconds)
     if (autoStart && safeSeconds > 0) {
-      endTimeRef.current = Date.now() + safeSeconds * 1000
+      endTimeRef.current = syncedNow() + safeSeconds * 1000
       setIsRunning(true)
       return { isRunning: true, remainingSeconds: safeSeconds, endsAt: endTimeRef.current }
     }
@@ -79,11 +80,11 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     let nextEndsAt = null
     setRemainingSeconds((current) => {
       const base = isRunning && endTimeRef.current
-        ? Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000))
+        ? Math.max(0, Math.ceil((endTimeRef.current - syncedNow()) / 1000))
         : current
       nextValue = Math.max(0, base + delta)
       if (isRunning) {
-        nextEndsAt = Date.now() + nextValue * 1000
+        nextEndsAt = syncedNow() + nextValue * 1000
         endTimeRef.current = nextEndsAt
       }
       return nextValue
@@ -107,7 +108,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     }
 
     if (isRunning) {
-      endTimeRef.current = Date.now() + next * 1000
+      endTimeRef.current = syncedNow() + next * 1000
       return { isRunning: true, remainingSeconds: next, endsAt: endTimeRef.current }
     }
 
@@ -124,7 +125,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     const remoteRunning = Boolean(session.isRunning)
     const remoteEndsAt = typeof session.endsAt === 'number' ? session.endsAt : null
     const remoteRemaining = remoteRunning && remoteEndsAt
-      ? Math.max(0, Math.ceil((remoteEndsAt - Date.now()) / 1000))
+      ? Math.max(0, Math.ceil((remoteEndsAt - syncedNow()) / 1000))
       : Math.max(0, Number(session.remainingSeconds) || 0)
 
     // 만료된 running 세션은 여기서 멈추지 않고, 호출측에서 레벨 완료로 처리합니다.
@@ -144,7 +145,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
 
   const getSnapshot = useCallback(() => {
     const remaining = isRunning && endTimeRef.current
-      ? Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000))
+      ? Math.max(0, Math.ceil((endTimeRef.current - syncedNow()) / 1000))
       : remainingSeconds
     return {
       isRunning,

@@ -1,6 +1,9 @@
 import gameStartUrl from '../assets/sounds/game-start.mp3'
 import blindsUpUrl from '../assets/sounds/blinds-up.mp3'
 import breakTimeUrl from '../assets/sounds/break-time.mp3'
+import gameStartMaleUrl from '../assets/sounds/game-start-male.mp3'
+import blindsUpMaleUrl from '../assets/sounds/blinds-up-male.mp3'
+import breakTimeMaleUrl from '../assets/sounds/break-time-male.mp3'
 
 /** Kept alive so the unlocked AudioContext is not GC'd on some TV browsers. */
 let unlockedAudioContext = null
@@ -8,11 +11,22 @@ let unlockedAudioContext = null
 /** True after unlockAudio() finishes (success or best-effort). */
 let audioUnlocked = false
 
+/** Voice 1 = Korean female (default), Voice 2 = Korean male. */
+export const ANNOUNCEMENT_VOICES = {
+  1: 'female',
+  2: 'male',
+}
+
+const VOICE_STORAGE_KEY = 'fourcard-timer-announcement-voice'
+
 /** Vite content-hashed URLs — bustes stale TV / CDN caches when audio changes. */
 const SOUND_URLS = {
-  'game-start': gameStartUrl,
-  'blinds-up': blindsUpUrl,
-  'break-time': breakTimeUrl,
+  'game-start-female': gameStartUrl,
+  'blinds-up-female': blindsUpUrl,
+  'break-time-female': breakTimeUrl,
+  'game-start-male': gameStartMaleUrl,
+  'blinds-up-male': blindsUpMaleUrl,
+  'break-time-male': breakTimeMaleUrl,
 }
 
 /** Decoded PCM buffers for Web Audio playback (preferred on Smart TVs). */
@@ -23,6 +37,85 @@ const soundCache = new Map()
 
 function logAudio(...args) {
   console.log('[audio]', ...args)
+}
+
+export function getAnnouncementVoice() {
+  try {
+    const saved = localStorage.getItem(VOICE_STORAGE_KEY)
+    return saved === '2' ? 2 : 1
+  } catch {
+    return 1
+  }
+}
+
+export function setAnnouncementVoice(voice) {
+  const next = voice === 2 ? 2 : 1
+  try {
+    localStorage.setItem(VOICE_STORAGE_KEY, String(next))
+  } catch {
+    // ignore quota / private mode
+  }
+  return next
+}
+
+function voiceGender(voice = getAnnouncementVoice()) {
+  return ANNOUNCEMENT_VOICES[voice] ?? ANNOUNCEMENT_VOICES[1]
+}
+
+/** Resolve base alert name to the voice-specific SOUND_URLS key. */
+function resolveSoundName(baseName, voice = getAnnouncementVoice()) {
+  return `${baseName}-${voiceGender(voice)}`
+}
+
+/**
+ * Pick a Korean SpeechSynthesis voice matching the selected gender.
+ * Voice 1 → female, Voice 2 → male. Falls back to any ko voice, then default.
+ */
+export function pickKoreanTtsVoice(voices, voice = getAnnouncementVoice()) {
+  const list = Array.isArray(voices) ? voices : []
+  const korean = list.filter((v) => {
+    const lang = String(v.lang || '').toLowerCase()
+    return lang === 'ko' || lang.startsWith('ko-')
+  })
+
+  const preferFemale = voiceGender(voice) === 'female'
+  const genderMatched = korean.filter((v) => {
+    const name = String(v.name || '').toLowerCase()
+    const isFemale =
+      /female|woman|girl|여성|여자|heami|sunhi|yuna|sora|ji.min|jimin/.test(name)
+    const isMale =
+      /male|man|boy|남성|남자|injoon|bongjin|hyunsu|minho/.test(name)
+    if (preferFemale) return isFemale && !isMale
+    return isMale && !isFemale
+  })
+
+  return genderMatched[0] || korean[0] || list[0] || null
+}
+
+/**
+ * Speak Korean text via SpeechSynthesis using the selected announcement voice.
+ * No-op when SpeechSynthesis is unavailable.
+ */
+export function speakAnnouncement(text, voice = getAnnouncementVoice()) {
+  if (typeof window === 'undefined' || !window.speechSynthesis || !text) return false
+
+  const utterance = new SpeechSynthesisUtterance(String(text))
+  utterance.lang = 'ko-KR'
+
+  const applyVoice = () => {
+    const selected = pickKoreanTtsVoice(window.speechSynthesis.getVoices(), voice)
+    if (selected) utterance.voice = selected
+  }
+
+  applyVoice()
+  // Some browsers populate voices asynchronously.
+  if (!utterance.voice) {
+    window.speechSynthesis.addEventListener('voiceschanged', applyVoice, { once: true })
+  }
+
+  window.speechSynthesis.cancel()
+  window.speechSynthesis.speak(utterance)
+  return true
 }
 
 function getAudioContext() {
@@ -227,19 +320,20 @@ export async function unlockAudio() {
     unlocked: audioUnlocked,
     contextState: ctxAfter?.state ?? 'none',
     buffers: [...audioBuffers.keys()],
+    announcementVoice: getAnnouncementVoice(),
   })
 }
 
 export function playGameStart() {
-  void playSound('game-start')
+  void playSound(resolveSoundName('game-start'))
 }
 
 export function playBlindsUp() {
-  void playSound('blinds-up')
+  void playSound(resolveSoundName('blinds-up'))
 }
 
 export function playBreakTime() {
-  void playSound('break-time')
+  void playSound(resolveSoundName('break-time'))
 }
 
 /**
@@ -257,5 +351,6 @@ export function getAudioDebugState() {
     unlocked: audioUnlocked,
     contextState: ctx?.state ?? 'none',
     bufferCount: audioBuffers.size,
+    announcementVoice: getAnnouncementVoice(),
   }
 }

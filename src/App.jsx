@@ -19,6 +19,12 @@ import {
 } from './lib/auth.js'
 import { isFirebaseConfigured } from './lib/firebase.js'
 import {
+  startClockOffsetSync,
+  stopClockOffsetSync,
+  syncServerClockOffset,
+  syncedNow,
+} from './lib/serverClock.js'
+import {
   isFileProtocol,
   savePresetsToCloud,
   subscribePresets,
@@ -48,10 +54,12 @@ import {
 } from './lib/sessionSync.js'
 import {
   ensureAudioRunning,
+  getAnnouncementVoice,
   getAudioDebugState,
   playBlindsUp,
   playBreakTime,
   playGameStart,
+  setAnnouncementVoice,
   unlockAudio,
 } from './lib/sound.js'
 
@@ -67,6 +75,7 @@ export default function App() {
   const [resetConfirm, setResetConfirm] = useState(false)
   const [memoOpen, setMemoOpen] = useState(false)
   const [memoEditing, setMemoEditing] = useState(false)
+  const [announcementVoice, setAnnouncementVoiceState] = useState(getAnnouncementVoice)
   const [globalSyncStatus, setGlobalSyncStatus] = useState('idle')
   const [globalSyncError, setGlobalSyncError] = useState('')
   const [presetsLinkStatus, setPresetsLinkStatus] = useState('idle')
@@ -115,6 +124,18 @@ export default function App() {
 
   useEffect(() => {
     authUidRef.current = authUid
+  }, [authUid])
+
+  // Firestore 서버 절대 시간 offset — 로그인 후 백그라운드 유지
+  useEffect(() => {
+    if (!authUid || !isFirebaseConfigured()) {
+      stopClockOffsetSync()
+      return undefined
+    }
+    startClockOffsetSync()
+    return () => {
+      stopClockOffsetSync()
+    }
   }, [authUid])
 
   // 지점 로그인 직후 localStorage에 남아 있는 타 지점 전용 프리셋을 바로 가립니다.
@@ -313,6 +334,7 @@ export default function App() {
         remainingSeconds: snapshot.remainingSeconds,
         activeGameId: settingsRef.current.activeGlobalGameId,
       })
+      syncServerClockOffset(false)
       return
     }
 
@@ -409,7 +431,7 @@ export default function App() {
         const remoteRunning = Boolean(session.isRunning)
         const remoteEndsAt = typeof session.endsAt === 'number' ? session.endsAt : null
         const remoteRemaining = remoteRunning && remoteEndsAt
-          ? Math.max(0, Math.ceil((remoteEndsAt - Date.now()) / 1000))
+          ? Math.max(0, Math.ceil((remoteEndsAt - syncedNow()) / 1000))
           : Math.max(0, Number(session.remainingSeconds) || 0)
 
         // 원격은 아직 running인데 endsAt이 지난 경우 → 로컬에서 레벨 완료 처리
@@ -518,6 +540,7 @@ export default function App() {
           endsAt: null,
           remainingSeconds: seconds,
         })
+        syncServerClockOffset(false)
       }
       return
     }
@@ -532,6 +555,8 @@ export default function App() {
         endsAt: snapshot.endsAt,
         remainingSeconds: snapshot.remainingSeconds,
       })
+      // 시작/정지 시 서버 시계 offset 조용히 재측정
+      syncServerClockOffset(true)
       return
     }
     if (action === 'next') {
@@ -546,6 +571,7 @@ export default function App() {
           endsAt: null,
           remainingSeconds: seconds,
         })
+        syncServerClockOffset(false)
       }
       return
     }
@@ -558,6 +584,7 @@ export default function App() {
         endsAt: snapshot.endsAt,
         remainingSeconds: snapshot.remainingSeconds,
       })
+      syncServerClockOffset(false)
       return
     }
     if (action === 'plus10') {
@@ -569,6 +596,7 @@ export default function App() {
         endsAt: snapshot.endsAt,
         remainingSeconds: snapshot.remainingSeconds,
       })
+      syncServerClockOffset(false)
       return
     }
     if (action === 'reset') {
@@ -586,6 +614,7 @@ export default function App() {
         endsAt: null,
         remainingSeconds: firstLevelSeconds,
       })
+      syncServerClockOffset(true)
     }
   }
 
@@ -840,6 +869,20 @@ export default function App() {
                 >
                   {memoOpen ? '닫기' : '메모'}
                 </button>
+                <label className="memo-panel__voice">
+                  <select
+                    className="memo-panel__voice-select"
+                    value={announcementVoice}
+                    aria-label="안내 음성 선택"
+                    onChange={(event) => {
+                      const next = setAnnouncementVoice(Number(event.target.value))
+                      setAnnouncementVoiceState(next)
+                    }}
+                  >
+                    <option value={1}>Voice 1</option>
+                    <option value={2}>Voice 2</option>
+                  </select>
+                </label>
                 {memoEditing ? (
                   <button
                     type="button"
@@ -957,6 +1000,7 @@ export default function App() {
                       endsAt: snapshot.endsAt,
                       remainingSeconds: snapshot.remainingSeconds,
                     })
+                    syncServerClockOffset(false)
                   }}
                 />
               </div>

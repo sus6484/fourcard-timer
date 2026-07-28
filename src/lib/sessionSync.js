@@ -1,6 +1,7 @@
 import { doc, onSnapshot, setDoc } from 'firebase/firestore'
 import { getFirebaseDb, isFirebaseConfigured } from './firebase.js'
 import { createResilientSnapshot } from './resilientSnapshot.js'
+import { syncedNow } from './serverClock.js'
 
 function sessionRef(branchId) {
   return doc(getFirebaseDb(), 'sessions', branchId)
@@ -22,7 +23,7 @@ export function createEmptySession(partial = {}) {
   }
 }
 
-export function deriveRemainingFromSession(session, now = Date.now()) {
+export function deriveRemainingFromSession(session, now = syncedNow()) {
   if (!session) return 0
   if (session.isRunning && typeof session.endsAt === 'number') {
     return Math.max(0, Math.ceil((session.endsAt - now) / 1000))

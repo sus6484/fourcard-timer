@@ -37,5 +37,10 @@ service cloud.firestore {
       allow read: if isAdmin() || isBranch(branchId);
       allow write: if isAdmin() || isBranch(branchId);
     }
+
+    // 기기 간 Absolute Time 보정용 (serverTimestamp 왕복 측정)
+    match /clockSync/{docId} {
+      allow read, write: if signedIn();
+    }
   }
 }
