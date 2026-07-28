@@ -57,7 +57,7 @@ export function setAnnouncementVoice(voice) {
   }
   // Resolve + log the mapped TTS voice as soon as the selection changes.
   if (typeof window !== 'undefined' && window.speechSynthesis) {
-    pickKoreanTtsVoice(window.speechSynthesis.getVoices(), next)
+    resolveKoreanTtsVoice(window.speechSynthesis.getVoices(), next)
   }
   return next
 }
@@ -89,11 +89,52 @@ function isMaleVoiceName(name) {
   return /injoon|남성|남자|\bmale\b|\bman\b|\bboy\b|bongjin|hyunsu|minho/.test(value)
 }
 
+/** Canonical Korean phrases so the engine does not switch to an English voice. */
+const ANNOUNCEMENT_TEXT_BY_KEY = {
+  'game-start': '게임 스타트',
+  'blinds-up': '블라인즈 업',
+  'break-time': '브레이크 타임',
+}
+
+const ANNOUNCEMENT_TEXT_ALIASES = {
+  'game start': '게임 스타트',
+  gamestart: '게임 스타트',
+  게임스타트: '게임 스타트',
+  'blinds up': '블라인즈 업',
+  blindsup: '블라인즈 업',
+  블라인즈업: '블라인즈 업',
+  'break time': '브레이크 타임',
+  breaktime: '브레이크 타임',
+  브레이크타임: '브레이크 타임',
+}
+
+/** Pitch / rate used when Voice 2 has no real male Korean voice installed. */
+const MALE_PITCH_FALLBACK = 0.35
+const MALE_RATE_FALLBACK = 0.9
+
+function normalizeAnnouncementText(text) {
+  const raw = String(text || '').trim()
+  if (!raw) return ''
+  const alias = ANNOUNCEMENT_TEXT_ALIASES[raw.toLowerCase()] || ANNOUNCEMENT_TEXT_ALIASES[raw]
+  return alias || raw
+}
+
+function defaultFemaleVoice(korean) {
+  return korean.find((v) => isFemaleVoiceName(v.name)) || korean[0] || null
+}
+
 /**
  * Pick a Korean SpeechSynthesis voice matching the selected gender.
- * Voice 1 → female, Voice 2 → male. Falls back to a different Korean index for Voice 2.
+ * Voice 1 → female. Voice 2 → male when available; otherwise female + pitch fallback.
  */
 export function pickKoreanTtsVoice(voices, voice = getAnnouncementVoice()) {
+  return resolveKoreanTtsVoice(voices, voice).selected
+}
+
+/**
+ * Resolve TTS voice + whether Voice 2 must fake a male timbre via pitch/rate.
+ */
+export function resolveKoreanTtsVoice(voices, voice = getAnnouncementVoice()) {
   const list = Array.isArray(voices) ? voices : []
   const korean = list.filter((v) => isKoreanLang(v.lang))
 
@@ -104,51 +145,80 @@ export function pickKoreanTtsVoice(voices, voice = getAnnouncementVoice()) {
 
   const preferFemale = voiceGender(voice) === 'female'
   let selected = null
+  let malePitchFallback = false
 
   if (preferFemale) {
-    selected = korean.find((v) => isFemaleVoiceName(v.name)) || korean[0] || null
+    selected = defaultFemaleVoice(korean)
   } else {
     selected = korean.find((v) => isMaleVoiceName(v.name))
-
-    if (!selected && korean.length > 0) {
-      // Guarantee Voice 2 differs from Voice 1 when no explicit male voice exists.
-      const femaleVoice =
-        korean.find((v) => isFemaleVoiceName(v.name)) || korean[0]
-      selected =
-        korean[korean.length - 1] !== femaleVoice
-          ? korean[korean.length - 1]
-          : korean.find((v) => v !== femaleVoice) || korean[0]
+    if (!selected) {
+      // No InJoon / Male voice installed — reuse the default female voice and pitch it down.
+      selected = defaultFemaleVoice(korean)
+      malePitchFallback = Boolean(selected)
     }
   }
 
-  selected = selected || korean[0] || list[0] || null
-  console.log('최종 선택된 목소리 이름', selected?.name ?? null)
-  return selected
+  selected = selected || korean[0] || null
+  console.log('최종 선택된 목소리 이름', selected?.name ?? null, {
+    voice,
+    malePitchFallback,
+  })
+  return { selected, malePitchFallback, korean }
+}
+
+function applyUtteranceVoiceSettings(utterance, selected, malePitchFallback) {
+  utterance.lang = 'ko-KR'
+  if (selected) utterance.voice = selected
+  if (malePitchFallback) {
+    utterance.pitch = MALE_PITCH_FALLBACK
+    utterance.rate = MALE_RATE_FALLBACK
+  } else {
+    utterance.pitch = 1
+    utterance.rate = 1
+  }
 }
 
 /**
  * Speak Korean text via SpeechSynthesis using the selected announcement voice.
+ * Always forces the same ko-KR voice object for every phrase (including Game Start).
  * No-op when SpeechSynthesis is unavailable.
  */
 export function speakAnnouncement(text, voice = getAnnouncementVoice()) {
-  if (typeof window === 'undefined' || !window.speechSynthesis || !text) return false
+  if (typeof window === 'undefined' || !window.speechSynthesis) return false
 
-  const utterance = new SpeechSynthesisUtterance(String(text))
-  utterance.lang = 'ko-KR'
+  const spokenText = normalizeAnnouncementText(text)
+  if (!spokenText) return false
 
-  const applyVoice = () => {
-    const selected = pickKoreanTtsVoice(window.speechSynthesis.getVoices(), voice)
+  const synth = window.speechSynthesis
+
+  const speakNow = () => {
+    const { selected, malePitchFallback } = resolveKoreanTtsVoice(synth.getVoices(), voice)
+    const utterance = new SpeechSynthesisUtterance(spokenText)
+    applyUtteranceVoiceSettings(utterance, selected, malePitchFallback)
+
+    // Re-assert voice right before speak — some engines drop it for Latin-looking tokens.
     if (selected) utterance.voice = selected
+    utterance.lang = 'ko-KR'
+
+    synth.cancel()
+    synth.speak(utterance)
+    logAudio('TTS speak:', {
+      text: spokenText,
+      voiceName: selected?.name ?? null,
+      lang: utterance.lang,
+      pitch: utterance.pitch,
+      rate: utterance.rate,
+      malePitchFallback,
+    })
   }
 
-  applyVoice()
-  // Some browsers populate voices asynchronously.
-  if (!utterance.voice) {
-    window.speechSynthesis.addEventListener('voiceschanged', applyVoice, { once: true })
+  // Voices often load asynchronously; wait before speaking so Game Start cannot grab an English voice.
+  if (synth.getVoices().length > 0) {
+    speakNow()
+  } else {
+    synth.addEventListener('voiceschanged', speakNow, { once: true })
   }
 
-  window.speechSynthesis.cancel()
-  window.speechSynthesis.speak(utterance)
   return true
 }
 
@@ -343,6 +413,12 @@ export async function unlockAudio() {
   const names = Object.keys(SOUND_URLS)
   await Promise.allSettled(names.map((name) => warmSound(name, ctx)))
 
+  // 4b) Prime SpeechSynthesis voices early so the first announcement keeps a fixed ko-KR voice.
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.getVoices()
+    resolveKoreanTtsVoice(window.speechSynthesis.getVoices(), getAnnouncementVoice())
+  }
+
   // 5) Resume again after async work — some TVs re-suspend during fetch/decode.
   const ctxAfter = await resumeAudioContext('unlock-after-warm')
 
@@ -359,15 +435,21 @@ export async function unlockAudio() {
 }
 
 export function playGameStart() {
-  void playSound(resolveSoundName('game-start'))
+  if (!speakAnnouncement(ANNOUNCEMENT_TEXT_BY_KEY['game-start'])) {
+    void playSound(resolveSoundName('game-start'))
+  }
 }
 
 export function playBlindsUp() {
-  void playSound(resolveSoundName('blinds-up'))
+  if (!speakAnnouncement(ANNOUNCEMENT_TEXT_BY_KEY['blinds-up'])) {
+    void playSound(resolveSoundName('blinds-up'))
+  }
 }
 
 export function playBreakTime() {
-  void playSound(resolveSoundName('break-time'))
+  if (!speakAnnouncement(ANNOUNCEMENT_TEXT_BY_KEY['break-time'])) {
+    void playSound(resolveSoundName('break-time'))
+  }
 }
 
 /**
