@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { syncedNow } from '../lib/serverClock.js'
 
+function remainingFromEndsAt(endsAt, now = syncedNow()) {
+  if (typeof endsAt !== 'number') return 0
+  return Math.max(0, Math.ceil((endsAt - now) / 1000))
+}
+
 export function useTimer(initialSeconds, { onComplete } = {}) {
   const [remainingSeconds, setRemainingSeconds] = useState(initialSeconds)
   const [isRunning, setIsRunning] = useState(false)
   const endTimeRef = useRef(null)
+  const isRunningRef = useRef(false)
   const onCompleteRef = useRef(onComplete)
   const suppressCompleteRef = useRef(false)
 
@@ -13,29 +19,59 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
   }, [onComplete])
 
   useEffect(() => {
+    isRunningRef.current = isRunning
+  }, [isRunning])
+
+  /**
+   * endsAt(서버 동기화 시각) 기준으로 남은 시간을 즉시 재계산합니다.
+   * setInterval이 스로틀돼도 탭 복귀·포커스 시 이 경로로 따라잡습니다.
+   */
+  const syncFromServerClock = useCallback(() => {
+    if (!isRunningRef.current || !endTimeRef.current) return
+
+    const nextRemaining = remainingFromEndsAt(endTimeRef.current)
+    setRemainingSeconds(nextRemaining)
+
+    if (nextRemaining <= 0) {
+      setIsRunning(false)
+      isRunningRef.current = false
+      endTimeRef.current = null
+      if (!suppressCompleteRef.current) {
+        onCompleteRef.current?.()
+      }
+      suppressCompleteRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
     if (!isRunning) return undefined
 
     const tick = () => {
-      const endTime = endTimeRef.current
-      if (!endTime) return
-
-      const nextRemaining = Math.max(0, Math.ceil((endTime - syncedNow()) / 1000))
-      setRemainingSeconds(nextRemaining)
-
-      if (nextRemaining <= 0) {
-        setIsRunning(false)
-        endTimeRef.current = null
-        if (!suppressCompleteRef.current) {
-          onCompleteRef.current?.()
-        }
-        suppressCompleteRef.current = false
-      }
+      syncFromServerClock()
     }
 
     tick()
     const intervalId = window.setInterval(tick, 200)
     return () => window.clearInterval(intervalId)
-  }, [isRunning])
+  }, [isRunning, syncFromServerClock])
+
+  // 백그라운드 스로틀 후 복귀 시 즉시 서버 시각 기준으로 보정
+  useEffect(() => {
+    const catchUp = () => {
+      if (document.visibilityState === 'visible') {
+        syncFromServerClock()
+      }
+    }
+
+    document.addEventListener('visibilitychange', catchUp)
+    window.addEventListener('focus', catchUp)
+    window.addEventListener('pageshow', catchUp)
+    return () => {
+      document.removeEventListener('visibilitychange', catchUp)
+      window.removeEventListener('focus', catchUp)
+      window.removeEventListener('pageshow', catchUp)
+    }
+  }, [syncFromServerClock])
 
   const start = useCallback(() => {
     endTimeRef.current = syncedNow() + remainingSeconds * 1000
@@ -47,7 +83,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     if (!isRunning || !endTimeRef.current) {
       return remainingSeconds
     }
-    const nextRemaining = Math.max(0, Math.ceil((endTimeRef.current - syncedNow()) / 1000))
+    const nextRemaining = remainingFromEndsAt(endTimeRef.current)
     setRemainingSeconds(nextRemaining)
     setIsRunning(false)
     endTimeRef.current = null
@@ -80,7 +116,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     let nextEndsAt = null
     setRemainingSeconds((current) => {
       const base = isRunning && endTimeRef.current
-        ? Math.max(0, Math.ceil((endTimeRef.current - syncedNow()) / 1000))
+        ? remainingFromEndsAt(endTimeRef.current)
         : current
       nextValue = Math.max(0, base + delta)
       if (isRunning) {
@@ -118,6 +154,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
   /**
    * Firestore 세션을 로컬 타이머에 반영합니다.
    * 같은 기기에서 방금 발행한 revision은 호출측에서 스킵하세요.
+   * 남은 시간은 항상 endsAt − syncedNow() 로 계산합니다.
    */
   const applyRemoteSession = useCallback((session) => {
     if (!session) return
@@ -125,11 +162,19 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     const remoteRunning = Boolean(session.isRunning)
     const remoteEndsAt = typeof session.endsAt === 'number' ? session.endsAt : null
     const remoteRemaining = remoteRunning && remoteEndsAt
-      ? Math.max(0, Math.ceil((remoteEndsAt - syncedNow()) / 1000))
+      ? remainingFromEndsAt(remoteEndsAt)
       : Math.max(0, Number(session.remainingSeconds) || 0)
 
-    // 만료된 running 세션은 여기서 멈추지 않고, 호출측에서 레벨 완료로 처리합니다.
+    // 만료된 running 세션은 타이머를 0으로 맞춘 뒤, 호출측에서 레벨 완료로 처리합니다.
+    // (이전처럼 early return 하면 레벨만 바뀌고 카운트다운이 멈춘 채로 남을 수 있음)
     if (remoteRunning && remoteRemaining <= 0) {
+      suppressCompleteRef.current = true
+      setRemainingSeconds(0)
+      setIsRunning(false)
+      endTimeRef.current = null
+      window.setTimeout(() => {
+        suppressCompleteRef.current = false
+      }, 0)
       return
     }
 
@@ -145,7 +190,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
 
   const getSnapshot = useCallback(() => {
     const remaining = isRunning && endTimeRef.current
-      ? Math.max(0, Math.ceil((endTimeRef.current - syncedNow()) / 1000))
+      ? remainingFromEndsAt(endTimeRef.current)
       : remainingSeconds
     return {
       isRunning,
@@ -165,6 +210,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     setSeconds,
     applyRemoteSession,
     getSnapshot,
+    syncFromServerClock,
   }
 }
 

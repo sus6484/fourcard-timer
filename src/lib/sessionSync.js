@@ -1,4 +1,4 @@
-import { doc, onSnapshot, setDoc } from 'firebase/firestore'
+import { doc, getDocFromServer, onSnapshot, setDoc } from 'firebase/firestore'
 import { getFirebaseDb, isFirebaseConfigured } from './firebase.js'
 import { createResilientSnapshot } from './resilientSnapshot.js'
 import { syncedNow } from './serverClock.js'
@@ -48,6 +48,21 @@ export async function publishSession(branchId, patch, { uid } = {}) {
 
   await setDoc(sessionRef(branchId), payload, { merge: true })
   return { updatedAt }
+}
+
+/**
+ * 캐시를 우회해 서버의 최신 세션을 한 번 읽어옵니다.
+ * 탭 복귀·Smart TV 절전 해제 시 onSnapshot이 묵음일 때 강제 동기화용.
+ */
+export async function fetchSession(branchId) {
+  if (!branchId) return null
+  if (!isFirebaseConfigured()) {
+    throw new Error('Firebase 설정이 없습니다.')
+  }
+
+  const snapshot = await getDocFromServer(sessionRef(branchId))
+  if (!snapshot.exists()) return null
+  return createEmptySession(snapshot.data())
 }
 
 /**

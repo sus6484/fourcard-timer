@@ -22,7 +22,6 @@ import {
   startClockOffsetSync,
   stopClockOffsetSync,
   syncServerClockOffset,
-  syncedNow,
 } from './lib/serverClock.js'
 import {
   isFileProtocol,
@@ -49,8 +48,10 @@ import {
   updateGlobalGames,
 } from './lib/settings.js'
 import {
+  fetchSession,
   publishSession,
   subscribeSession,
+  deriveRemainingFromSession,
 } from './lib/sessionSync.js'
 import {
   ensureAudioRunning,
@@ -103,6 +104,11 @@ export default function App() {
   const levelsRef = useRef([])
   const resetRef = useRef(null)
   const publishTimerStateRef = useRef(null)
+  const applyRemoteSessionRef = useRef(null)
+  const syncFromServerClockRef = useRef(null)
+  const applyIncomingSessionRef = useRef(null)
+  const resumeSyncInFlightRef = useRef(null)
+  const lastResumeSyncAtRef = useRef(0)
 
   const isAdmin = isAdminSession(authSession)
   const activeBranchId = authSession?.branchId || ''
@@ -299,12 +305,15 @@ export default function App() {
     setSeconds,
     applyRemoteSession,
     getSnapshot,
+    syncFromServerClock,
   } = useTimer(initialSeconds, {
     onComplete: () => completeHandlerRef.current?.(),
   })
 
   resetRef.current = reset
   publishTimerStateRef.current = publishTimerState
+  applyRemoteSessionRef.current = applyRemoteSession
+  syncFromServerClockRef.current = syncFromServerClock
 
   const handleLevelComplete = useCallback(() => {
     const schedule = levelsRef.current
@@ -348,6 +357,104 @@ export default function App() {
   }, [findNextPlayableIndex, levelSeconds, publishTimerState, reset])
 
   completeHandlerRef.current = handleLevelComplete
+
+  /**
+   * Firestore 세션 스냅샷을 화면에 반영합니다.
+   * 구독 콜백과 탭 복귀 시 강제 fetch가 동일 경로를 씁니다.
+   */
+  const applyIncomingSession = useCallback((session) => {
+    if (!session) return
+
+    // 로컬에서 방금 레벨을 넘긴 직후에는 원격 덮어쓰기를 잠시 무시
+    if (Date.now() < localAuthorityUntilRef.current) {
+      return
+    }
+
+    const remoteRevision = Number(session.revision) || 0
+    if (remoteRevision && remoteRevision <= lastPublishedRevisionRef.current) {
+      return
+    }
+
+    const remoteLevelIndex = Number(session.levelIndex) || 0
+    const remoteRunning = Boolean(session.isRunning)
+    const remoteRemaining = deriveRemainingFromSession(session)
+
+    // 원격은 아직 running인데 endsAt이 지난 경우 → 로컬에서 레벨 완료 처리
+    if (
+      remoteRunning &&
+      remoteRemaining <= 0 &&
+      remoteLevelIndex === levelIndexRef.current
+    ) {
+      completeHandlerRef.current?.()
+      return
+    }
+
+    // 로컬이 이미 다음 레벨로 넘어간 뒤 도착한 0초 스냅샷은 무시
+    if (
+      !remoteRunning &&
+      remoteRemaining <= 0 &&
+      remoteLevelIndex < levelIndexRef.current
+    ) {
+      return
+    }
+
+    // 같은 레벨의 0초 paused 스냅샷은 자동 레벨업을 가로채지 않도록 무시
+    if (
+      !remoteRunning &&
+      remoteRemaining <= 0 &&
+      remoteLevelIndex === levelIndexRef.current &&
+      remoteLevelIndex < levelsRef.current.length - 1
+    ) {
+      completeHandlerRef.current?.()
+      return
+    }
+
+    // 원격이 이미 다음 레벨인데 그 레벨 endsAt도 지난 경우:
+    // 레벨을 맞춘 뒤 타이머를 0으로 적용하고, 이어서 완료 처리로 따라잡습니다.
+    const remoteExpiredOnOtherLevel =
+      remoteRunning &&
+      remoteRemaining <= 0 &&
+      remoteLevelIndex !== levelIndexRef.current
+
+    if (remoteRevision) {
+      lastPublishedRevisionRef.current = Math.max(
+        lastPublishedRevisionRef.current,
+        remoteRevision,
+      )
+    }
+
+    applyingRemoteRef.current = true
+
+    if (session.activeGameId && session.activeGameId !== settingsRef.current.activeGlobalGameId) {
+      skipLevelResetRef.current = true
+      setSettings((current) => selectGlobalGame(current, session.activeGameId))
+    }
+
+    if (typeof session.screenMemo === 'string') {
+      setSettings((current) =>
+        updateMemoStyle(updateScreenMemo(current, session.screenMemo), {
+          fontSize: session.memoFontSize,
+          color: session.memoColor,
+        }),
+      )
+    }
+
+    if (remoteLevelIndex !== levelIndexRef.current) {
+      skipLevelResetRef.current = true
+      levelIndexRef.current = remoteLevelIndex
+      setLevelIndex(remoteLevelIndex)
+    }
+
+    applyRemoteSessionRef.current?.(session)
+
+    if (remoteExpiredOnOtherLevel) {
+      window.setTimeout(() => {
+        completeHandlerRef.current?.()
+      }, 0)
+    }
+  }, [])
+
+  applyIncomingSessionRef.current = applyIncomingSession
 
   useWakeLock(isRunning)
 
@@ -415,85 +522,7 @@ export default function App() {
     const unsubscribe = subscribeSession(
       activeBranchId,
       (session) => {
-        if (!session) return
-
-        // 로컬에서 방금 레벨을 넘긴 직후에는 원격 덮어쓰기를 잠시 무시
-        if (Date.now() < localAuthorityUntilRef.current) {
-          return
-        }
-
-        const remoteRevision = Number(session.revision) || 0
-        if (remoteRevision && remoteRevision <= lastPublishedRevisionRef.current) {
-          return
-        }
-
-        const remoteLevelIndex = Number(session.levelIndex) || 0
-        const remoteRunning = Boolean(session.isRunning)
-        const remoteEndsAt = typeof session.endsAt === 'number' ? session.endsAt : null
-        const remoteRemaining = remoteRunning && remoteEndsAt
-          ? Math.max(0, Math.ceil((remoteEndsAt - syncedNow()) / 1000))
-          : Math.max(0, Number(session.remainingSeconds) || 0)
-
-        // 원격은 아직 running인데 endsAt이 지난 경우 → 로컬에서 레벨 완료 처리
-        if (
-          remoteRunning &&
-          remoteRemaining <= 0 &&
-          remoteLevelIndex === levelIndexRef.current
-        ) {
-          completeHandlerRef.current?.()
-          return
-        }
-
-        // 로컬이 이미 다음 레벨로 넘어간 뒤 도착한 0초 스냅샷은 무시
-        if (
-          !remoteRunning &&
-          remoteRemaining <= 0 &&
-          remoteLevelIndex < levelIndexRef.current
-        ) {
-          return
-        }
-
-        // 같은 레벨의 0초 paused 스냅샷은 자동 레벨업을 가로채지 않도록 무시
-        if (
-          !remoteRunning &&
-          remoteRemaining <= 0 &&
-          remoteLevelIndex === levelIndexRef.current &&
-          remoteLevelIndex < levelsRef.current.length - 1
-        ) {
-          completeHandlerRef.current?.()
-          return
-        }
-
-        if (remoteRevision) {
-          lastPublishedRevisionRef.current = Math.max(
-            lastPublishedRevisionRef.current,
-            remoteRevision,
-          )
-        }
-
-        applyingRemoteRef.current = true
-
-        if (session.activeGameId && session.activeGameId !== settingsRef.current.activeGlobalGameId) {
-          skipLevelResetRef.current = true
-          setSettings((current) => selectGlobalGame(current, session.activeGameId))
-        }
-
-        if (typeof session.screenMemo === 'string') {
-          setSettings((current) =>
-            updateMemoStyle(updateScreenMemo(current, session.screenMemo), {
-              fontSize: session.memoFontSize,
-              color: session.memoColor,
-            }),
-          )
-        }
-
-        if (remoteLevelIndex !== levelIndexRef.current) {
-          skipLevelResetRef.current = true
-          levelIndexRef.current = remoteLevelIndex
-          setLevelIndex(remoteLevelIndex)
-        }
-
-        applyRemoteSession(session)
+        applyIncomingSessionRef.current?.(session)
       },
       (error) => {
         console.log('[session] subscribe failed:', error)
@@ -504,7 +533,66 @@ export default function App() {
     )
 
     return unsubscribe
-  }, [authUid, activeBranchId, applyRemoteSession])
+  }, [authUid, activeBranchId])
+
+  // Smart TV / 백그라운드 탭 복귀 시: 서버 시계·세션 강제 동기화 (폴링 아님, 이벤트+쓰로틀)
+  useEffect(() => {
+    if (!authUid || !activeBranchId) return undefined
+
+    /** 전체 서버 fetch(getDoc + clock) 최소 간격 — 절전 플래핑 비용 상한 */
+    const RESUME_SYNC_MIN_GAP_MS = 30 * 1000
+
+    const resumeFromServer = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      if (resumeSyncInFlightRef.current) return
+
+      const now = Date.now()
+      if (now - lastResumeSyncAtRef.current < RESUME_SYNC_MIN_GAP_MS) {
+        // 쓰로틀 안: Firestore Read 없이 로컬 endsAt 기준으로만 화면 보정
+        syncFromServerClockRef.current?.()
+        return
+      }
+
+      const branchId = activeBranchIdRef.current
+      if (!branchId) return
+
+      lastResumeSyncAtRef.current = now
+
+      resumeSyncInFlightRef.current = (async () => {
+        try {
+          // force=false → serverClock 60초 가드 적용 (불필요한 clock 문서 R/W 억제)
+          await syncServerClockOffset(false)
+          syncFromServerClockRef.current?.()
+          const session = await fetchSession(branchId)
+          if (session && activeBranchIdRef.current === branchId) {
+            applyIncomingSessionRef.current?.(session)
+          }
+        } catch (error) {
+          console.log('[session] visibility resume sync failed:', error)
+        } finally {
+          resumeSyncInFlightRef.current = null
+        }
+      })()
+
+      await resumeSyncInFlightRef.current
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        resumeFromServer()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', resumeFromServer)
+    window.addEventListener('pageshow', resumeFromServer)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', resumeFromServer)
+      window.removeEventListener('pageshow', resumeFromServer)
+    }
+  }, [authUid, activeBranchId])
 
   const persistSettings = (nextSettings) => {
     setSettings(nextSettings)

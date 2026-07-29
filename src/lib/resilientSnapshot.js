@@ -3,15 +3,26 @@
  * 재구독되지 않는 경우를 대비한 복구 래퍼입니다.
  *
  * - 에러 시 exponential backoff으로 재구독
- * - online / 긴 백그라운드 복귀 시 강제 재연결
+ * - online / 백그라운드 복귀 시 강제 재연결 (쓰로틀됨 — 폴링 아님)
  * - 주기적 헬스 재구독 (Smart TV WebSocket 묵음 단절 대비)
  * - 상태 콜백: connecting | connected | reconnecting | offline
+ *
+ * 비용 참고:
+ * - LONG_HIDDEN_MS 는 "숨김 지속 시간" 판정값일 뿐, N초마다 읽는 인터벌이 아님
+ * - visibility 재구독은 VISIBILITY_RESUBSCRIBE_MIN_GAP_MS 로 상한
+ * - health 재구독은 healthResubscribeMs(기본 5분) 주기 1회
  */
 
 const DEFAULT_INITIAL_DELAY_MS = 1000
 const DEFAULT_MAX_DELAY_MS = 30000
 const DEFAULT_HEALTH_RESUBSCRIBE_MS = 5 * 60 * 1000
-const LONG_HIDDEN_MS = 30 * 1000
+/** 이 시간 이상 숨겨졌다가 돌아오면 재구독 후보 (폴링 간격 아님) */
+const LONG_HIDDEN_MS = 3 * 1000
+/**
+ * visibility 복귀로 인한 재구독 최소 간격.
+ * TV가 절전/복귀를 반복해도 리스너당 이보다 자주 초기 스냅샷 Read가 나가지 않음.
+ */
+const VISIBILITY_RESUBSCRIBE_MIN_GAP_MS = 60 * 1000
 
 /**
  * @param {(onNext: Function, onError: Function) => Function} attachListener
@@ -23,6 +34,7 @@ const LONG_HIDDEN_MS = 30 * 1000
  *   initialDelayMs?: number,
  *   maxDelayMs?: number,
  *   healthResubscribeMs?: number,
+ *   visibilityResubscribeMinGapMs?: number,
  * }} options
  * @returns {() => void} unsubscribe / stop
  */
@@ -34,6 +46,7 @@ export function createResilientSnapshot(attachListener, options = {}) {
     initialDelayMs = DEFAULT_INITIAL_DELAY_MS,
     maxDelayMs = DEFAULT_MAX_DELAY_MS,
     healthResubscribeMs = DEFAULT_HEALTH_RESUBSCRIBE_MS,
+    visibilityResubscribeMinGapMs = VISIBILITY_RESUBSCRIBE_MIN_GAP_MS,
   } = options
 
   let stopped = false
@@ -46,6 +59,7 @@ export function createResilientSnapshot(attachListener, options = {}) {
   let hiddenAt = null
   let quietResubscribe = false
   let attaching = false
+  let lastVisibilityResubscribeAt = 0
 
   const setStatus = (next) => {
     if (stopped || status === next) return
@@ -95,11 +109,16 @@ export function createResilientSnapshot(attachListener, options = {}) {
 
   const scheduleReconnect = (reason = 'error') => {
     if (stopped) return
+    // 이미 재연결이 예약/진행 중이면 중복 detach→attach 폭주를 막음
+    if (reason === 'health' || reason === 'visibility') {
+      if (attaching || retryTimer != null) return
+    }
+
     clearRetryTimer()
     detachSnapshot()
 
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false
-    quietResubscribe = reason === 'health' && !offline
+    quietResubscribe = (reason === 'health' || reason === 'visibility') && !offline
 
     if (offline) {
       quietResubscribe = false
@@ -111,7 +130,14 @@ export function createResilientSnapshot(attachListener, options = {}) {
       setStatus('reconnecting')
     }
 
-    const delay = reason === 'immediate' || reason === 'health' ? 0 : backoffDelay()
+    if (reason === 'visibility') {
+      lastVisibilityResubscribeAt = Date.now()
+    }
+
+    const delay =
+      reason === 'immediate' || reason === 'health' || reason === 'visibility'
+        ? 0
+        : backoffDelay()
     retryTimer = setTimeout(() => {
       retryTimer = null
       startListener()
@@ -196,16 +222,29 @@ export function createResilientSnapshot(attachListener, options = {}) {
       return
     }
 
-    // 오래 숨겨졌다가 돌아오면 WebSocket이 죽은 경우가 있어 강제 재구독
-    if (hiddenFor >= LONG_HIDDEN_MS) {
+    // 숨김이 짧으면 리스너를 유지 (불필요한 초기 스냅샷 Read 방지)
+    if (hiddenFor < LONG_HIDDEN_MS) return
+
+    // 절전/복귀 플래핑 시 재구독 폭주 방지
+    const sinceLast = Date.now() - lastVisibilityResubscribeAt
+    if (sinceLast < visibilityResubscribeMinGapMs) return
+
+    attempt = 0
+    scheduleReconnect('visibility')
+  }
+
+  const handlePageShow = () => {
+    if (stopped) return
+    if (status !== 'connected') {
       attempt = 0
-      scheduleReconnect('health')
+      scheduleReconnect('immediate')
     }
   }
 
   if (typeof window !== 'undefined') {
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+    window.addEventListener('pageshow', handlePageShow)
   }
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', handleVisibility)
@@ -221,6 +260,7 @@ export function createResilientSnapshot(attachListener, options = {}) {
     if (typeof window !== 'undefined') {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('pageshow', handlePageShow)
     }
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', handleVisibility)
