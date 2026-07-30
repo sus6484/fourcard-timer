@@ -112,6 +112,13 @@ const ANNOUNCEMENT_TEXT_ALIASES = {
 const MALE_PITCH_FALLBACK = 0.35
 const MALE_RATE_FALLBACK = 0.9
 
+/**
+ * Web Audio playback gain. HTMLMediaElement / SpeechSynthesis max out at 1;
+ * GainNode can go above 1 to make alerts audible on quiet venue speakers.
+ * 1.5 is a safe first step — raise toward 2 if field feedback still says quiet.
+ */
+const SOUND_GAIN = 1.5
+
 function normalizeAnnouncementText(text) {
   const raw = String(text || '').trim()
   if (!raw) return ''
@@ -168,6 +175,8 @@ export function resolveKoreanTtsVoice(voices, voice = getAnnouncementVoice()) {
 
 function applyUtteranceVoiceSettings(utterance, selected, malePitchFallback) {
   utterance.lang = 'ko-KR'
+  // Spec clamps volume to [0, 1] — cannot amplify SpeechSynthesis past this.
+  utterance.volume = 1
   if (selected) utterance.voice = selected
   if (malePitchFallback) {
     utterance.pitch = MALE_PITCH_FALLBACK
@@ -278,12 +287,12 @@ function playBuffer(name) {
 
   const source = ctx.createBufferSource()
   const gain = ctx.createGain()
-  gain.gain.value = 1
+  gain.gain.value = SOUND_GAIN
   source.buffer = buffer
   source.connect(gain)
   gain.connect(ctx.destination)
   source.start(0)
-  logAudio('playBuffer: started', name, 'ctx.state=', ctx.state)
+  logAudio('playBuffer: started', name, 'gain=', SOUND_GAIN, 'ctx.state=', ctx.state)
   return true
 }
 
@@ -307,9 +316,20 @@ async function playSound(name) {
 
   const ctx = await resumeAudioContext(`play:${name}`)
 
-  if (ctx && playBuffer(name)) return
+  if (ctx && playBuffer(name)) return true
 
-  await playHtmlSound(name)
+  return playHtmlSound(name)
+}
+
+/**
+ * Prefer amplified MP3 (GainNode can exceed 1). SpeechSynthesis is capped at
+ * volume 1, so it is only a fallback when Web Audio / HTMLAudio cannot play.
+ */
+async function playAnnouncement(baseName) {
+  const played = await playSound(resolveSoundName(baseName))
+  if (!played) {
+    speakAnnouncement(ANNOUNCEMENT_TEXT_BY_KEY[baseName])
+  }
 }
 
 /**
@@ -435,21 +455,15 @@ export async function unlockAudio() {
 }
 
 export function playGameStart() {
-  if (!speakAnnouncement(ANNOUNCEMENT_TEXT_BY_KEY['game-start'])) {
-    void playSound(resolveSoundName('game-start'))
-  }
+  void playAnnouncement('game-start')
 }
 
 export function playBlindsUp() {
-  if (!speakAnnouncement(ANNOUNCEMENT_TEXT_BY_KEY['blinds-up'])) {
-    void playSound(resolveSoundName('blinds-up'))
-  }
+  void playAnnouncement('blinds-up')
 }
 
 export function playBreakTime() {
-  if (!speakAnnouncement(ANNOUNCEMENT_TEXT_BY_KEY['break-time'])) {
-    void playSound(resolveSoundName('break-time'))
-  }
+  void playAnnouncement('break-time')
 }
 
 /**
