@@ -1,5 +1,5 @@
 import { doc, getDocFromServer, serverTimestamp, setDoc } from 'firebase/firestore'
-import { getFirebaseDb, isFirebaseConfigured } from './firebase.js'
+import { getFirebaseAuth, getFirebaseDb, isFirebaseConfigured } from './firebase.js'
 
 /** 주기적 재측정 간격 (30분) */
 const CLOCK_RESYNC_MS = 30 * 60 * 1000
@@ -14,10 +14,13 @@ let clockSyncInFlight = null
 let clockResyncTimer = null
 let lastClockSyncAt = 0
 let started = false
+/** 권한 없음이 확인되면 로그인 전까지 Firestore 시계 sync 를 건너뛴다 */
+let clockSyncUnavailable = false
 
 /**
  * 서버 시각에 맞춘 현재 시각(ms).
  * syncedNow() ≈ Firestore 서버 절대 시간
+ * (비로그인·동기화 실패 시 offset=0 → Date.now() 와 동일)
  */
 export function syncedNow() {
   return Date.now() + clockOffsetMs
@@ -58,16 +61,42 @@ function parseServerMillis(serverTime) {
   return NaN
 }
 
+function isSignedIn() {
+  try {
+    return Boolean(getFirebaseAuth()?.currentUser)
+  } catch {
+    return false
+  }
+}
+
+function isPermissionError(err) {
+  const code = String(err?.code ?? '')
+  const message = String(err?.message ?? '')
+  return (
+    code === 'permission-denied' ||
+    code === 'missing-or-insufficient-permissions' ||
+    /Missing or insufficient permissions/i.test(message) ||
+    /permission/i.test(code)
+  )
+}
+
 /**
  * Firestore serverTimestamp 로 로컬 시계 오차(offset)를 측정한다.
  * offset ≈ serverNow - Date.now()
  * → syncedNow() = Date.now() + offset
+ *
+ * 비로그인·권한 없음이면 Firestore 호출 없이 null 을 반환하고
+ * 로컬 Date.now() 기준(offset=0)으로 동작한다.
  *
  * @param {boolean} [force]
  * @returns {Promise<number | null>}
  */
 export function syncServerClockOffset(force = false) {
   if (!isFirebaseConfigured()) {
+    return Promise.resolve(null)
+  }
+  // 로그인 전이거나 이전에 권한 거절된 경우: Firestore 호출 자체를 건너뛴다.
+  if (clockSyncUnavailable || !isSignedIn()) {
     return Promise.resolve(null)
   }
   if (clockSyncInFlight) return clockSyncInFlight
@@ -109,6 +138,7 @@ export function syncServerClockOffset(force = false) {
       // 왕복의 중간 시점에 서버 시각이 기록됐다고 가정
       const offset = Math.round(serverMs - (t0 + rtt / 2))
       setClockOffsetMs(offset)
+      clockSyncUnavailable = false
 
       // 임시 확인용 로그 — 기기 간 Offset 보정 값
       console.log(
@@ -124,6 +154,11 @@ export function syncServerClockOffset(force = false) {
 
       return offset
     } catch (err) {
+      if (isPermissionError(err)) {
+        // 비로그인·규칙 거절: 로컬 시계로 조용히 fallback (타이머 흐름을 막지 않음)
+        clockSyncUnavailable = true
+        return null
+      }
       console.warn('[FourcardClock] 동기화 실패 (로컬 시계 사용):', err)
       return null
     } finally {
@@ -136,15 +171,16 @@ export function syncServerClockOffset(force = false) {
 
 /** 앱 기동 시 1회 + 30분 주기 백그라운드 재측정 */
 export function startClockOffsetSync() {
+  clockSyncUnavailable = false
   if (started) {
-    syncServerClockOffset(true)
+    void syncServerClockOffset(true)
     return
   }
   started = true
-  syncServerClockOffset(true)
+  void syncServerClockOffset(true)
   if (!clockResyncTimer) {
     clockResyncTimer = window.setInterval(() => {
-      syncServerClockOffset(false)
+      void syncServerClockOffset(false)
     }, CLOCK_RESYNC_MS)
   }
 }
@@ -155,4 +191,6 @@ export function stopClockOffsetSync() {
     clockResyncTimer = null
   }
   started = false
+  clockSyncUnavailable = false
+  clockSyncInFlight = null
 }

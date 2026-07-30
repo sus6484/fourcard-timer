@@ -343,7 +343,10 @@ export default function App() {
         remainingSeconds: snapshot.remainingSeconds,
         activeGameId: settingsRef.current.activeGlobalGameId,
       })
-      syncServerClockOffset(false)
+      // 로그인된 기기만 서버 시계 보정 (비로그인은 로컬 시각 fallback)
+      if (authUidRef.current) {
+        void syncServerClockOffset(false)
+      }
       return
     }
 
@@ -628,7 +631,7 @@ export default function App() {
           endsAt: null,
           remainingSeconds: seconds,
         })
-        syncServerClockOffset(false)
+        if (authUidRef.current) void syncServerClockOffset(false)
       }
       return
     }
@@ -643,8 +646,8 @@ export default function App() {
         endsAt: snapshot.endsAt,
         remainingSeconds: snapshot.remainingSeconds,
       })
-      // 시작/정지 시 서버 시계 offset 조용히 재측정
-      syncServerClockOffset(true)
+      // 시작/정지 시 서버 시계 offset 조용히 재측정 (로그인 시에만)
+      if (authUidRef.current) void syncServerClockOffset(true)
       return
     }
     if (action === 'next') {
@@ -659,7 +662,7 @@ export default function App() {
           endsAt: null,
           remainingSeconds: seconds,
         })
-        syncServerClockOffset(false)
+        if (authUidRef.current) void syncServerClockOffset(false)
       }
       return
     }
@@ -672,7 +675,7 @@ export default function App() {
         endsAt: snapshot.endsAt,
         remainingSeconds: snapshot.remainingSeconds,
       })
-      syncServerClockOffset(false)
+      if (authUidRef.current) void syncServerClockOffset(false)
       return
     }
     if (action === 'plus10') {
@@ -684,7 +687,7 @@ export default function App() {
         endsAt: snapshot.endsAt,
         remainingSeconds: snapshot.remainingSeconds,
       })
-      syncServerClockOffset(false)
+      if (authUidRef.current) void syncServerClockOffset(false)
       return
     }
     if (action === 'reset') {
@@ -702,7 +705,7 @@ export default function App() {
         endsAt: null,
         remainingSeconds: firstLevelSeconds,
       })
-      syncServerClockOffset(true)
+      if (authUidRef.current) void syncServerClockOffset(true)
     }
   }
 
@@ -1088,7 +1091,7 @@ export default function App() {
                       endsAt: snapshot.endsAt,
                       remainingSeconds: snapshot.remainingSeconds,
                     })
-                    syncServerClockOffset(false)
+                    if (authUidRef.current) void syncServerClockOffset(false)
                   }}
                 />
               </div>

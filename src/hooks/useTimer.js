@@ -40,6 +40,13 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
         onCompleteRef.current?.()
       }
       suppressCompleteRef.current = false
+      // onComplete → reset({ autoStart: true }) 가 동기적으로 endTimeRef 를 다시 심을 수 있다.
+      // isRunning 이 true→false→true 로 배칭되면 useEffect 가 스킵되어
+      // isRunningRef 가 false 에 남고 틱이 영구 정지한다. 동기 복구가 필수.
+      if (endTimeRef.current) {
+        isRunningRef.current = true
+        setIsRunning(true)
+      }
     }
   }, [])
 
@@ -75,6 +82,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
 
   const start = useCallback(() => {
     endTimeRef.current = syncedNow() + remainingSeconds * 1000
+    isRunningRef.current = true
     setIsRunning(true)
     return endTimeRef.current
   }, [remainingSeconds])
@@ -85,6 +93,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     }
     const nextRemaining = remainingFromEndsAt(endTimeRef.current)
     setRemainingSeconds(nextRemaining)
+    isRunningRef.current = false
     setIsRunning(false)
     endTimeRef.current = null
     return nextRemaining
@@ -103,9 +112,11 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     setRemainingSeconds(safeSeconds)
     if (autoStart && safeSeconds > 0) {
       endTimeRef.current = syncedNow() + safeSeconds * 1000
+      isRunningRef.current = true
       setIsRunning(true)
       return { isRunning: true, remainingSeconds: safeSeconds, endsAt: endTimeRef.current }
     }
+    isRunningRef.current = false
     setIsRunning(false)
     endTimeRef.current = null
     return { isRunning: false, remainingSeconds: safeSeconds, endsAt: null }
@@ -137,14 +148,21 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     setRemainingSeconds(next)
 
     if (next <= 0) {
+      isRunningRef.current = false
       setIsRunning(false)
       endTimeRef.current = null
       onCompleteRef.current?.()
+      // 블라인드 자동 전환이 endTimeRef 를 다시 심었으면 틱이 멈추지 않게 복구
+      if (endTimeRef.current) {
+        isRunningRef.current = true
+        setIsRunning(true)
+      }
       return { isRunning: false, remainingSeconds: 0, endsAt: null }
     }
 
     if (isRunning) {
       endTimeRef.current = syncedNow() + next * 1000
+      isRunningRef.current = true
       return { isRunning: true, remainingSeconds: next, endsAt: endTimeRef.current }
     }
 
@@ -170,6 +188,7 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     if (remoteRunning && remoteRemaining <= 0) {
       suppressCompleteRef.current = true
       setRemainingSeconds(0)
+      isRunningRef.current = false
       setIsRunning(false)
       endTimeRef.current = null
       window.setTimeout(() => {
@@ -180,8 +199,10 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
 
     suppressCompleteRef.current = true
     setRemainingSeconds(remoteRemaining)
-    setIsRunning(remoteRunning && remoteRemaining > 0)
-    endTimeRef.current = remoteRunning && remoteRemaining > 0 ? remoteEndsAt : null
+    const nextRunning = remoteRunning && remoteRemaining > 0
+    isRunningRef.current = nextRunning
+    setIsRunning(nextRunning)
+    endTimeRef.current = nextRunning ? remoteEndsAt : null
 
     window.setTimeout(() => {
       suppressCompleteRef.current = false
