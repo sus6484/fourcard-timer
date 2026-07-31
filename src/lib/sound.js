@@ -113,6 +113,12 @@ const MALE_PITCH_FALLBACK = 0.35
 const MALE_RATE_FALLBACK = 0.9
 
 /**
+ * Voice 2 MP3 pitch-down. Male *-male.mp3 assets are byte-identical to female,
+ * so we lower playbackRate through Web Audio (still GainNode-amplified).
+ */
+const MALE_MP3_PLAYBACK_RATE = 0.84
+
+/**
  * Web Audio playback gain. HTMLMediaElement / SpeechSynthesis max out at 1;
  * GainNode can go above 1 to make alerts audible on quiet venue speakers.
  * 1.5 is a safe first step — raise toward 2 if field feedback still says quiet.
@@ -275,7 +281,7 @@ function getHtmlSound(name) {
 }
 
 /** Play a decoded buffer through the unlocked AudioContext. */
-function playBuffer(name) {
+function playBuffer(name, { playbackRate = 1 } = {}) {
   const ctx = getAudioContext()
   const buffer = audioBuffers.get(name)
   if (!ctx || !buffer) return false
@@ -289,21 +295,32 @@ function playBuffer(name) {
   const gain = ctx.createGain()
   gain.gain.value = SOUND_GAIN
   source.buffer = buffer
+  source.playbackRate.value = playbackRate
   source.connect(gain)
   gain.connect(ctx.destination)
   source.start(0)
-  logAudio('playBuffer: started', name, 'gain=', SOUND_GAIN, 'ctx.state=', ctx.state)
+  logAudio(
+    'playBuffer: started',
+    name,
+    'gain=',
+    SOUND_GAIN,
+    'rate=',
+    playbackRate,
+    'ctx.state=',
+    ctx.state,
+  )
   return true
 }
 
-async function playHtmlSound(name) {
+async function playHtmlSound(name, { playbackRate = 1 } = {}) {
   const audio = getHtmlSound(name)
   audio.currentTime = 0
   audio.muted = false
   audio.volume = 1
+  audio.playbackRate = playbackRate
   try {
     await audio.play()
-    logAudio('playHtmlSound: started', name)
+    logAudio('playHtmlSound: started', name, 'rate=', playbackRate)
     return true
   } catch (error) {
     logAudio('playHtmlSound: blocked', name, error)
@@ -311,24 +328,31 @@ async function playHtmlSound(name) {
   }
 }
 
-async function playSound(name) {
-  logAudio('playSound:', name, 'unlocked=', audioUnlocked)
+async function playSound(name, options = {}) {
+  logAudio('playSound:', name, 'unlocked=', audioUnlocked, 'options=', options)
 
   const ctx = await resumeAudioContext(`play:${name}`)
 
-  if (ctx && playBuffer(name)) return true
+  if (ctx && playBuffer(name, options)) return true
 
-  return playHtmlSound(name)
+  return playHtmlSound(name, options)
 }
 
 /**
- * Prefer amplified MP3 (GainNode can exceed 1). SpeechSynthesis is capped at
- * volume 1, so it is only a fallback when Web Audio / HTMLAudio cannot play.
+ * Prefer amplified MP3 for both voices (GainNode can exceed volume 1).
+ * Voice 2 also lowers playbackRate so it sounds male-ish — the *-male.mp3
+ * files are currently identical copies of the female recordings.
+ * TTS remains a fallback when Web Audio / HTMLAudio cannot play.
  */
 async function playAnnouncement(baseName) {
-  const played = await playSound(resolveSoundName(baseName))
+  const voice = getAnnouncementVoice()
+  const text = ANNOUNCEMENT_TEXT_BY_KEY[baseName]
+  const soundName = resolveSoundName(baseName, voice)
+  const options = voice === 2 ? { playbackRate: MALE_MP3_PLAYBACK_RATE } : {}
+
+  const played = await playSound(soundName, options)
   if (!played) {
-    speakAnnouncement(ANNOUNCEMENT_TEXT_BY_KEY[baseName])
+    speakAnnouncement(text, voice)
   }
 }
 
