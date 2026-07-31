@@ -4,6 +4,12 @@ import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import './styles/app.css'
 
+// 배포 빌드 ID — TV끼리 버전 불일치 확인용 (콘솔)
+if (import.meta.env.VITE_APP_BUILD_ID) {
+  window.__FOURCARD_BUILD__ = import.meta.env.VITE_APP_BUILD_ID
+  console.log('[Fourcard] build=', import.meta.env.VITE_APP_BUILD_ID)
+}
+
 function showBootError(message) {
   const root = document.getElementById('root')
   if (!root) return

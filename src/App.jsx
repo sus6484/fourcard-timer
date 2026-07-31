@@ -18,6 +18,7 @@ import {
   subscribeAuth,
 } from './lib/auth.js'
 import { isFirebaseConfigured } from './lib/firebase.js'
+import { hardReloadToLatest } from './lib/hardReload.js'
 import {
   startClockOffsetSync,
   stopClockOffsetSync,
@@ -672,13 +673,7 @@ export default function App() {
         }
       }
     } finally {
-      try {
-        const url = new URL(window.location.href)
-        url.searchParams.set('_', String(Date.now()))
-        window.location.replace(url.toString())
-      } catch {
-        window.location.reload()
-      }
+      await hardReloadToLatest({ reason: 'latest-version' })
     }
   }
 
@@ -1027,7 +1022,7 @@ export default function App() {
               className="connection-refresh-btn"
               disabled={latestRefreshing}
               onClick={handleLoadLatestVersion}
-              title="서버에서 최신 프리셋을 받고 화면을 새로고침합니다"
+              title={`서버에서 최신 프리셋/세션을 받고 캐시를 비운 뒤 새로고침합니다${import.meta.env.VITE_APP_BUILD_ID ? ` (build ${import.meta.env.VITE_APP_BUILD_ID})` : ''}`}
             >
               {latestRefreshing ? '불러오는 중…' : '최신 버전'}
             </button>
