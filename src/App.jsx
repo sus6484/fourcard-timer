@@ -24,6 +24,7 @@ import {
   syncServerClockOffset,
 } from './lib/serverClock.js'
 import {
+  fetchPresetsFromCloud,
   isFileProtocol,
   savePresetsToCloud,
   subscribePresets,
@@ -89,6 +90,7 @@ export default function App() {
   const [branchLoginOpen, setBranchLoginOpen] = useState(false)
   const [branchLoginError, setBranchLoginError] = useState('')
   const [branchLoginLoading, setBranchLoginLoading] = useState(false)
+  const [latestRefreshing, setLatestRefreshing] = useState(false)
 
   const autoStartNextLevelRef = useRef(false)
   const skipLevelResetRef = useRef(false)
@@ -109,6 +111,7 @@ export default function App() {
   const applyIncomingSessionRef = useRef(null)
   const resumeSyncInFlightRef = useRef(null)
   const lastResumeSyncAtRef = useRef(0)
+  const presetsViewerBranchIdRef = useRef(null)
 
   const isAdmin = isAdminSession(authSession)
   const activeBranchId = authSession?.branchId || ''
@@ -131,6 +134,10 @@ export default function App() {
   useEffect(() => {
     authUidRef.current = authUid
   }, [authUid])
+
+  useEffect(() => {
+    presetsViewerBranchIdRef.current = presetsViewerBranchId
+  }, [presetsViewerBranchId])
 
   // Firestore 서버 절대 시간 offset — 로그인 후 백그라운드 유지
   useEffect(() => {
@@ -538,11 +545,11 @@ export default function App() {
     return unsubscribe
   }, [authUid, activeBranchId])
 
-  // Smart TV / 백그라운드 탭 복귀 시: 서버 시계·세션 강제 동기화 (폴링 아님, 이벤트+쓰로틀)
+  // Smart TV / 백그라운드 탭 복귀 시: 서버 시계·세션·프리셋 강제 동기화 (폴링 아님, 이벤트+쓰로틀)
   useEffect(() => {
-    if (!authUid || !activeBranchId) return undefined
+    if (!authUid) return undefined
 
-    /** 전체 서버 fetch(getDoc + clock) 최소 간격 — 절전 플래핑 비용 상한 */
+    /** 전체 서버 fetch(getDocFromServer + clock) 최소 간격 — 절전 플래핑 비용 상한 */
     const RESUME_SYNC_MIN_GAP_MS = 30 * 1000
 
     const resumeFromServer = async () => {
@@ -556,9 +563,6 @@ export default function App() {
         return
       }
 
-      const branchId = activeBranchIdRef.current
-      if (!branchId) return
-
       lastResumeSyncAtRef.current = now
 
       resumeSyncInFlightRef.current = (async () => {
@@ -566,12 +570,37 @@ export default function App() {
           // force=false → serverClock 60초 가드 적용 (불필요한 clock 문서 R/W 억제)
           await syncServerClockOffset(false)
           syncFromServerClockRef.current?.()
-          const session = await fetchSession(branchId)
-          if (session && activeBranchIdRef.current === branchId) {
-            applyIncomingSessionRef.current?.(session)
-          }
+
+          const branchId = activeBranchIdRef.current
+          const viewerBranchId = presetsViewerBranchIdRef.current
+
+          const presetsPromise = fetchPresetsFromCloud()
+            .then((remote) => {
+              if (!remote?.missing) {
+                setSettings((current) =>
+                  applyRemoteGlobalSettings(current, remote, { branchId: viewerBranchId }),
+                )
+              }
+            })
+            .catch((error) => {
+              console.log('[presets] visibility resume sync failed:', error)
+            })
+
+          const sessionPromise = branchId
+            ? fetchSession(branchId)
+                .then((session) => {
+                  if (session && activeBranchIdRef.current === branchId) {
+                    applyIncomingSessionRef.current?.(session)
+                  }
+                })
+                .catch((error) => {
+                  console.log('[session] visibility resume sync failed:', error)
+                })
+            : Promise.resolve()
+
+          await Promise.all([presetsPromise, sessionPromise])
         } catch (error) {
-          console.log('[session] visibility resume sync failed:', error)
+          console.log('[sync] visibility resume sync failed:', error)
         } finally {
           resumeSyncInFlightRef.current = null
         }
@@ -599,6 +628,58 @@ export default function App() {
 
   const persistSettings = (nextSettings) => {
     setSettings(nextSettings)
+  }
+
+  /** Smart TV용: 서버 최신 프리셋/세션을 받은 뒤 페이지를 캐시 버스팅 새로고침 */
+  const handleLoadLatestVersion = async () => {
+    if (latestRefreshing) return
+    setLatestRefreshing(true)
+
+    try {
+      if (authUid && isFirebaseConfigured() && !isFileProtocol()) {
+        try {
+          await syncServerClockOffset(true)
+          syncFromServerClockRef.current?.()
+        } catch (error) {
+          console.log('[sync] latest clock sync failed:', error)
+        }
+
+        const viewerBranchId = presetsViewerBranchIdRef.current
+        const branchId = activeBranchIdRef.current
+
+        try {
+          const remote = await fetchPresetsFromCloud()
+          if (!remote?.missing) {
+            const next = applyRemoteGlobalSettings(settingsRef.current, remote, {
+              branchId: viewerBranchId,
+            })
+            setSettings(next)
+            saveSettings(next)
+          }
+        } catch (error) {
+          console.log('[presets] latest version fetch failed:', error)
+        }
+
+        if (branchId) {
+          try {
+            const session = await fetchSession(branchId)
+            if (session && activeBranchIdRef.current === branchId) {
+              applyIncomingSessionRef.current?.(session)
+            }
+          } catch (error) {
+            console.log('[session] latest version fetch failed:', error)
+          }
+        }
+      }
+    } finally {
+      try {
+        const url = new URL(window.location.href)
+        url.searchParams.set('_', String(Date.now()))
+        window.location.replace(url.toString())
+      } catch {
+        window.location.reload()
+      }
+    }
   }
 
   const selectGlobal = (gameId) => {
@@ -925,20 +1006,31 @@ export default function App() {
             </p>
           )}
 
-          <div
-            className={`connection-badge connection-badge--${connectionBadge.tone}`}
-            role="status"
-            aria-live="polite"
-            title={
-              authSession
-                ? `프리셋: ${presetsLinkStatus}${activeBranchId ? ` / 세션: ${sessionLinkStatus}` : ''}`
-                : '지점 로그인 후 Firebase와 동기화됩니다'
-            }
-          >
-            <span className="connection-badge__icon" aria-hidden="true">
-              {connectionBadge.icon}
-            </span>
-            <span className="connection-badge__label">{connectionBadge.label}</span>
+          <div className="connection-bar">
+            <div
+              className={`connection-badge connection-badge--${connectionBadge.tone}`}
+              role="status"
+              aria-live="polite"
+              title={
+                authSession
+                  ? `프리셋: ${presetsLinkStatus}${activeBranchId ? ` / 세션: ${sessionLinkStatus}` : ''}`
+                  : '지점 로그인 후 Firebase와 동기화됩니다'
+              }
+            >
+              <span className="connection-badge__icon" aria-hidden="true">
+                {connectionBadge.icon}
+              </span>
+              <span className="connection-badge__label">{connectionBadge.label}</span>
+            </div>
+            <button
+              type="button"
+              className="connection-refresh-btn"
+              disabled={latestRefreshing}
+              onClick={handleLoadLatestVersion}
+              title="서버에서 최신 프리셋을 받고 화면을 새로고침합니다"
+            >
+              {latestRefreshing ? '불러오는 중…' : '최신 버전'}
+            </button>
           </div>
 
           <main className="timer-screen" aria-hidden={!audioReady}>

@@ -1,4 +1,4 @@
-import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore'
+import { doc, getDocFromServer, onSnapshot, setDoc } from 'firebase/firestore'
 import { getFirebaseDb, isFirebaseConfigured } from './firebase.js'
 import { createResilientSnapshot } from './resilientSnapshot.js'
 
@@ -20,12 +20,7 @@ function normalizeRemotePayload(data) {
   }
 }
 
-export async function fetchPresetsFromCloud() {
-  if (!isFirebaseConfigured()) {
-    throw new Error('Firebase 설정이 없습니다. .env의 VITE_FIREBASE_* 값을 확인하세요.')
-  }
-
-  const snapshot = await getDoc(presetsRef())
+function payloadFromSnapshot(snapshot) {
   if (!snapshot.exists()) {
     return {
       globalGames: [],
@@ -38,6 +33,21 @@ export async function fetchPresetsFromCloud() {
     ...normalizeRemotePayload(snapshot.data()),
     missing: false,
   }
+}
+
+/**
+ * Firestore 로컬(IndexedDB) 캐시를 우회해 서버의 최신 프리셋을 한 번 읽어옵니다.
+ * Smart TV 브라우저가 오래된 캐시를 붙잡는 경우·탭 복귀 강제 동기화용.
+ *
+ * (일반 HTTP fetch의 cache: 'no-store' / URL 타임스탬프에 해당하는 Firestore API)
+ */
+export async function fetchPresetsFromCloud() {
+  if (!isFirebaseConfigured()) {
+    throw new Error('Firebase 설정이 없습니다. .env의 VITE_FIREBASE_* 값을 확인하세요.')
+  }
+
+  const snapshot = await getDocFromServer(presetsRef())
+  return payloadFromSnapshot(snapshot)
 }
 
 export async function savePresetsToCloud({ globalGames }) {
@@ -74,18 +84,34 @@ export function subscribePresets(onData, onError, onStatus) {
   }
 
   return createResilientSnapshot(
-    (onNext, onSnapError) =>
-      onSnapshot(
+    (onNext, onSnapError) => {
+      let cancelled = false
+
+      // onSnapshot은 캐시 히트를 먼저 줄 수 있음 → 서버 강제 조회로 최신본을 먼저/함께 확보
+      void getDocFromServer(presetsRef())
+        .then((snapshot) => {
+          if (cancelled) return
+          onNext(payloadFromSnapshot(snapshot))
+        })
+        .catch(() => {
+          // 실패해도 onSnapshot이 이어받으면 됨 (구독 자체를 실패로 두지 않음)
+        })
+
+      const unsubscribe = onSnapshot(
         presetsRef(),
         (snapshot) => {
-          if (!snapshot.exists()) {
-            onNext({ globalGames: [], updatedAt: null, missing: true })
-            return
-          }
-          onNext({ ...normalizeRemotePayload(snapshot.data()), missing: false })
+          // Smart TV IndexedDB에 남은 옛 프리셋이 localStorage까지 덮어쓰지 않도록 캐시-only는 무시
+          if (snapshot.metadata.fromCache) return
+          onNext(payloadFromSnapshot(snapshot))
         },
         onSnapError,
-      ),
+      )
+
+      return () => {
+        cancelled = true
+        unsubscribe()
+      }
+    },
     { onData, onError, onStatus },
   )
 }
