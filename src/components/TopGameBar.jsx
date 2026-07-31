@@ -29,13 +29,12 @@ export default function TopGameBar({
       </div>
 
       <div className="top-game-bar__row top-game-bar__row--actions">
-        {sessionLabel ? (
-          <span className="top-game-bar__settings top-game-bar__session-btn">{sessionLabel}</span>
-        ) : (
-          <span className="top-game-bar__settings top-game-bar__session-btn">지점미선택</span>
-        )}
-        <button type="button" className="top-game-bar__settings" onClick={onOpenBranchLogin}>
-          지점
+        <button
+          type="button"
+          className="top-game-bar__settings top-game-bar__session-btn"
+          onClick={onOpenBranchLogin}
+        >
+          {sessionLabel || '지점선택'}
         </button>
         {isLoggedIn ? (
           <button type="button" className="top-game-bar__settings" onClick={onLogout}>
