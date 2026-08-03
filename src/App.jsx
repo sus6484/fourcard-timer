@@ -86,7 +86,6 @@ export default function App() {
   const [adminSaveError, setAdminSaveError] = useState('')
   const [adminSaving, setAdminSaving] = useState(false)
   const [audioReady, setAudioReady] = useState(false)
-  const [audioUnlocking, setAudioUnlocking] = useState(false)
   const [loginOpen, setLoginOpen] = useState(false)
   const [branchLoginOpen, setBranchLoginOpen] = useState(false)
   const [branchLoginError, setBranchLoginError] = useState('')
@@ -97,6 +96,7 @@ export default function App() {
   const skipLevelResetRef = useRef(false)
   const localAdvanceRef = useRef(false)
   const applyingRemoteRef = useRef(false)
+  const audioStartStartedRef = useRef(false)
   const localAuthorityUntilRef = useRef(0)
   const lastPublishedRevisionRef = useRef(0)
   const lastTimerSyncKeyRef = useRef('')
@@ -930,21 +930,25 @@ export default function App() {
   const stageScale = useFitScale(DESIGN_WIDTH, DESIGN_HEIGHT)
   const firebaseReady = isFirebaseConfigured()
 
-  const handleStartGame = async (event) => {
+  const handleStartGame = (event) => {
     event?.preventDefault?.()
-    if (audioUnlocking || audioReady) return
+    // Ref guard: pointerdown + click can both fire before React re-renders.
+    if (audioStartStartedRef.current || audioReady) return
+    audioStartStartedRef.current = true
 
     console.log('[audio] start button gesture:', event?.type ?? 'unknown')
-    setAudioUnlocking(true)
-    try {
-      await unlockAudio()
-      console.log('[audio] start complete:', getAudioDebugState())
-    } catch (error) {
-      console.log('[audio] start failed:', error)
-    } finally {
-      setAudioReady(true)
-      setAudioUnlocking(false)
-    }
+    // Dismiss overlay immediately — never wait on audio unlock / network.
+    setAudioReady(true)
+
+    // Keep unlock in the same gesture turn (starts sync until first await),
+    // but do not block the UI if resume/fetch/decode hangs on mobile.
+    void unlockAudio()
+      .then(() => {
+        console.log('[audio] start complete:', getAudioDebugState())
+      })
+      .catch((error) => {
+        console.log('[audio] start failed:', error)
+      })
   }
 
   return (
@@ -973,7 +977,6 @@ export default function App() {
               <button
                 type="button"
                 className="start-overlay__btn"
-                disabled={audioUnlocking}
                 autoFocus
                 onPointerDown={handleStartGame}
                 onClick={handleStartGame}
@@ -983,7 +986,7 @@ export default function App() {
                   }
                 }}
               >
-                {audioUnlocking ? '오디오 활성화 중…' : '게임 시작 (음소거 해제)'}
+                게임 시작 (음소거 해제)
               </button>
               <p className="start-overlay__hint">
                 이 버튼을 눌러 TV 브라우저 오디오를 활성화합니다

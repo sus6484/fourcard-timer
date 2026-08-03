@@ -11,6 +11,30 @@ let unlockedAudioContext = null
 /** True after unlockAudio() finishes (success or best-effort). */
 let audioUnlocked = false
 
+/** Timeouts so a hung resume/fetch/decode cannot block forever on mobile. */
+const RESUME_TIMEOUT_MS = 2000
+const MEDIA_PLAY_TIMEOUT_MS = 2000
+const WARM_SOUND_TIMEOUT_MS = 8000
+const UNLOCK_TOTAL_TIMEOUT_MS = 15000
+
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`[audio] timeout: ${label} after ${ms}ms`))
+    }, ms)
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
 /** Voice 1 = Korean female (default), Voice 2 = Korean male. */
 export const ANNOUNCEMENT_VOICES = {
   1: 'female',
@@ -259,7 +283,7 @@ async function resumeAudioContext(reason) {
 
   if (ctx.state === 'suspended') {
     try {
-      await ctx.resume()
+      await withTimeout(ctx.resume(), RESUME_TIMEOUT_MS, `resume:${reason}`)
     } catch (error) {
       logAudio(`resume (${reason}) failed:`, error)
     }
@@ -365,9 +389,21 @@ async function warmSound(name, ctx) {
 
   if (ctx) {
     try {
-      const response = await fetch(url, { cache: 'no-store' })
-      const arrayBuffer = await response.arrayBuffer()
-      const buffer = await ctx.decodeAudioData(arrayBuffer.slice(0))
+      const response = await withTimeout(
+        fetch(url, { cache: 'no-store' }),
+        WARM_SOUND_TIMEOUT_MS,
+        `warm-fetch:${name}`,
+      )
+      const arrayBuffer = await withTimeout(
+        response.arrayBuffer(),
+        WARM_SOUND_TIMEOUT_MS,
+        `warm-buffer:${name}`,
+      )
+      const buffer = await withTimeout(
+        ctx.decodeAudioData(arrayBuffer.slice(0)),
+        WARM_SOUND_TIMEOUT_MS,
+        `warm-decode:${name}`,
+      )
       audioBuffers.set(name, buffer)
       logAudio('warmSound: decoded', name, 'duration=', buffer.duration.toFixed(2) + 's')
       return
@@ -382,7 +418,7 @@ async function warmSound(name, ctx) {
     audio.muted = true
     audio.volume = 0
     audio.load()
-    await audio.play()
+    await withTimeout(audio.play(), MEDIA_PLAY_TIMEOUT_MS, `warm-play:${name}`)
     audio.pause()
     audio.currentTime = 0
     audio.muted = false
@@ -416,13 +452,10 @@ function playUnlockBeep(ctx) {
 }
 
 /**
- * Explicit audio start — must be called from a user gesture
- * (click / pointerdown / keydown) so Smart TV autoplay policies allow sound.
+ * Core unlock steps. May hang on some mobile browsers without withTimeout wrappers.
+ * Must be started from a user gesture (click / pointerdown / keydown).
  */
-export async function unlockAudio() {
-  logAudio('=== audio start (user gesture) ===')
-  logAudio('document.visibilityState=', document.visibilityState)
-
+async function runUnlockAudioPipeline() {
   // 1) Create + resume AudioContext inside the gesture (critical for TVs).
   const ctx = await resumeAudioContext('unlock')
 
@@ -446,7 +479,7 @@ export async function unlockAudio() {
       'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=',
     )
     unlockEl.volume = 0.01
-    await unlockEl.play()
+    await withTimeout(unlockEl.play(), MEDIA_PLAY_TIMEOUT_MS, 'silent-html-unlock')
     unlockEl.pause()
     logAudio('silent HTMLAudio unlock ok')
   } catch (error) {
@@ -455,7 +488,13 @@ export async function unlockAudio() {
 
   // 4) Decode / prime alert MP3s so later plays do not hit autoplay gates.
   const names = Object.keys(SOUND_URLS)
-  await Promise.allSettled(names.map((name) => warmSound(name, ctx)))
+  await Promise.allSettled(
+    names.map((name) =>
+      withTimeout(warmSound(name, ctx), WARM_SOUND_TIMEOUT_MS, `warm:${name}`).catch((error) => {
+        logAudio('warmSound timed out/failed:', name, error)
+      }),
+    ),
+  )
 
   // 4b) Prime SpeechSynthesis voices early so the first announcement keeps a fixed ko-KR voice.
   if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -469,13 +508,36 @@ export async function unlockAudio() {
   // 6) Audible confirmation that the pipeline is live.
   playUnlockBeep(ctxAfter)
 
-  audioUnlocked = true
-  logAudio('=== audio start complete ===', {
-    unlocked: audioUnlocked,
-    contextState: ctxAfter?.state ?? 'none',
-    buffers: [...audioBuffers.keys()],
-    announcementVoice: getAnnouncementVoice(),
-  })
+  return ctxAfter
+}
+
+/**
+ * Explicit audio start — must be called from a user gesture
+ * (click / pointerdown / keydown) so Smart TV autoplay policies allow sound.
+ * Safe to fire-and-forget after the start overlay is dismissed.
+ */
+export async function unlockAudio() {
+  logAudio('=== audio start (user gesture) ===')
+  logAudio('document.visibilityState=', document.visibilityState)
+
+  let ctxAfter = null
+  try {
+    ctxAfter = await withTimeout(
+      runUnlockAudioPipeline(),
+      UNLOCK_TOTAL_TIMEOUT_MS,
+      'unlockAudio',
+    )
+  } catch (error) {
+    logAudio('unlockAudio failed or timed out:', error)
+  } finally {
+    audioUnlocked = true
+    logAudio('=== audio start complete ===', {
+      unlocked: audioUnlocked,
+      contextState: ctxAfter?.state ?? unlockedAudioContext?.state ?? 'none',
+      buffers: [...audioBuffers.keys()],
+      announcementVoice: getAnnouncementVoice(),
+    })
+  }
 }
 
 export function playGameStart() {
