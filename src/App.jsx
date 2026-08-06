@@ -57,12 +57,12 @@ import {
 } from './lib/sessionSync.js'
 import {
   ensureAudioRunning,
-  getAnnouncementVoice,
   getAudioDebugState,
-  playBlindsUp,
-  playBreakTime,
-  playGameStart,
-  setAnnouncementVoice,
+  playDoorong,
+  playTick,
+  speakBreakTime,
+  speakGameStart,
+  speakNextLevelBlindsUp,
   unlockAudio,
 } from './lib/sound.js'
 
@@ -78,7 +78,6 @@ export default function App() {
   const [resetConfirm, setResetConfirm] = useState(false)
   const [memoOpen, setMemoOpen] = useState(false)
   const [memoEditing, setMemoEditing] = useState(false)
-  const [announcementVoice, setAnnouncementVoiceState] = useState(getAnnouncementVoice)
   const [globalSyncStatus, setGlobalSyncStatus] = useState('idle')
   const [globalSyncError, setGlobalSyncError] = useState('')
   const [presetsLinkStatus, setPresetsLinkStatus] = useState('idle')
@@ -97,6 +96,10 @@ export default function App() {
   const localAdvanceRef = useRef(false)
   const applyingRemoteRef = useRef(false)
   const audioStartStartedRef = useRef(false)
+  /** Metis-style cue marks: voice at 6s, ticks at 3·2·1 before level end. */
+  const transitionCueMarksRef = useRef({})
+  const prevRemainingForCueRef = useRef(null)
+  const lastDoorongAtRef = useRef(0)
   const localAuthorityUntilRef = useRef(0)
   const lastPublishedRevisionRef = useRef(0)
   const lastTimerSyncKeyRef = useRef('')
@@ -275,6 +278,65 @@ export default function App() {
     return nextIndex
   }, [levelSeconds])
 
+  const resetTransitionCues = useCallback(() => {
+    transitionCueMarksRef.current = {}
+    prevRemainingForCueRef.current = null
+  }, [])
+
+  const playTransitionDoorong = useCallback(() => {
+    const nowMs = Date.now()
+    if (nowMs - lastDoorongAtRef.current < 800) return
+    lastDoorongAtRef.current = nowMs
+    ensureAudioRunning('doorong')
+    playDoorong()
+  }, [])
+
+  /** Crossed a countdown threshold (Metis crossedThreshold). */
+  const crossedThreshold = useCallback((prevSec, curSec, threshold) => {
+    if (curSec == null) return false
+    if (prevSec == null) return curSec <= threshold
+    return prevSec > threshold && curSec <= threshold
+  }, [])
+
+  /**
+   * Announce upcoming transition + 띵 countdown.
+   * Metis: voice at 6s, ticks at 3·2·1 (only while on a non-break play level).
+   */
+  const runTransitionCues = useCallback(
+    (prevSec, curSec, idPrefix, { speak, voiceAt = 6, tickHi = 3, tickLo = 1 } = {}) => {
+      if (curSec == null) return
+      const marks = transitionCueMarksRef.current
+
+      if (voiceAt != null && typeof speak === 'function') {
+        const vKey = `${idPrefix}-voice`
+        if (!marks[vKey] && crossedThreshold(prevSec, curSec, voiceAt)) {
+          marks[vKey] = true
+          ensureAudioRunning('cue-voice')
+          speak()
+        }
+      }
+
+      for (let t = tickHi; t >= tickLo; t -= 1) {
+        const tKey = `${idPrefix}-t${t}`
+        if (!marks[tKey] && crossedThreshold(prevSec, curSec, t)) {
+          marks[tKey] = true
+          ensureAudioRunning('cue-tick')
+          playTick()
+        }
+      }
+    },
+    [crossedThreshold],
+  )
+
+  const announceUpcomingLevel = useCallback(
+    (upcoming) => {
+      if (!upcoming) return
+      if (upcoming.isBreak) speakBreakTime()
+      else speakNextLevelBlindsUp()
+    },
+    [],
+  )
+
   const publishTimerState = useCallback(async (partial) => {
     const branchId = activeBranchIdRef.current
     const uid = authUidRef.current
@@ -323,6 +385,54 @@ export default function App() {
   applyRemoteSessionRef.current = applyRemoteSession
   syncFromServerClockRef.current = syncFromServerClock
 
+  useEffect(() => {
+    resetTransitionCues()
+  }, [levelIndex, activeGame?.id, resetTransitionCues])
+
+  // Metis-style pre-transition cues while a play level is counting down.
+  useEffect(() => {
+    if (!isRunning) {
+      prevRemainingForCueRef.current = null
+      return
+    }
+
+    const schedule = levels
+    const current = schedule[levelIndex]
+    // Metis skips cues while on a break row.
+    if (!current || current.isBreak) {
+      prevRemainingForCueRef.current = remainingSeconds
+      return
+    }
+
+    const nextIndex = findNextPlayableIndex(levelIndex, schedule)
+    const upcoming = schedule[nextIndex]
+    if (!upcoming) {
+      prevRemainingForCueRef.current = remainingSeconds
+      return
+    }
+
+    const prevSec = prevRemainingForCueRef.current
+    const curSec = remainingSeconds
+    prevRemainingForCueRef.current = curSec
+
+    const toBreak = Boolean(upcoming.isBreak)
+    const prefix = `${toBreak ? 'br' : 'lv'}-${levelIndex}`
+    runTransitionCues(prevSec, curSec, prefix, {
+      voiceAt: 6,
+      speak: () => announceUpcomingLevel(upcoming),
+      tickHi: 3,
+      tickLo: 1,
+    })
+  }, [
+    remainingSeconds,
+    isRunning,
+    levelIndex,
+    levels,
+    findNextPlayableIndex,
+    runTransitionCues,
+    announceUpcomingLevel,
+  ])
+
   const handleLevelComplete = useCallback(() => {
     const schedule = levelsRef.current
     if (!schedule.length) return
@@ -332,8 +442,17 @@ export default function App() {
 
     if (nextIndex < schedule.length) {
       const upcoming = schedule[nextIndex]
-      if (upcoming?.isBreak) playBreakTime()
-      else playBlindsUp()
+      const current = schedule[currentIndex]
+      const toBreak = Boolean(upcoming?.isBreak)
+      const prefix = `${toBreak ? 'br' : 'lv'}-${currentIndex}`
+      const voiceKey = `${prefix}-voice`
+      // Fallback: short levels / skips may miss the 6s cue.
+      if (!current?.isBreak && !transitionCueMarksRef.current[voiceKey]) {
+        transitionCueMarksRef.current[voiceKey] = true
+        announceUpcomingLevel(upcoming)
+      }
+      playTransitionDoorong()
+      resetTransitionCues()
 
       const nextSeconds = levelSeconds(upcoming)
       localAdvanceRef.current = true
@@ -365,7 +484,15 @@ export default function App() {
       remainingSeconds: 0,
       levelIndex: currentIndex,
     })
-  }, [findNextPlayableIndex, levelSeconds, publishTimerState, reset])
+  }, [
+    announceUpcomingLevel,
+    findNextPlayableIndex,
+    levelSeconds,
+    playTransitionDoorong,
+    publishTimerState,
+    reset,
+    resetTransitionCues,
+  ])
 
   completeHandlerRef.current = handleLevelComplete
 
@@ -713,7 +840,7 @@ export default function App() {
     }
     if (action === 'toggle') {
       if (!isRunning && levelIndex === 0 && remainingSeconds === initialSeconds) {
-        playGameStart()
+        speakGameStart()
       }
       const snapshot = toggle()
       publishTimerState({
@@ -730,13 +857,25 @@ export default function App() {
       if (activeGame && levelIndex < levels.length - 1) {
         const nextIndex = findNextPlayableIndex(levelIndex, levels)
         if (nextIndex >= levels.length) return
+        const upcoming = levels[nextIndex]
+        const current = levels[levelIndex]
+        if (!current?.isBreak) {
+          announceUpcomingLevel(upcoming)
+        }
+        playTransitionDoorong()
+        resetTransitionCues()
+        const seconds = levelSeconds(upcoming)
+        localAdvanceRef.current = true
+        autoStartNextLevelRef.current = false
+        localAuthorityUntilRef.current = Date.now() + 2000
+        levelIndexRef.current = nextIndex
         setLevelIndex(nextIndex)
-        const seconds = levelSeconds(levels[nextIndex])
+        const snapshot = reset(seconds, { autoStart: true })
         publishTimerState({
           levelIndex: nextIndex,
-          isRunning: false,
-          endsAt: null,
-          remainingSeconds: seconds,
+          isRunning: snapshot.isRunning,
+          endsAt: snapshot.endsAt,
+          remainingSeconds: snapshot.remainingSeconds,
         })
         if (authUidRef.current) void syncServerClockOffset(false)
       }
@@ -1070,20 +1209,6 @@ export default function App() {
                     수정
                   </button>
                 )}
-                <label className="memo-panel__voice">
-                  <select
-                    className="memo-panel__voice-select"
-                    value={announcementVoice}
-                    aria-label="안내 음성 선택"
-                    onChange={(event) => {
-                      const next = setAnnouncementVoice(Number(event.target.value))
-                      setAnnouncementVoiceState(next)
-                    }}
-                  >
-                    <option value={1}>Voice 1</option>
-                    <option value={2}>Voice 2</option>
-                  </select>
-                </label>
               </div>
               <MemoPanel
                 open={memoOpen}
