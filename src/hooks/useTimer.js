@@ -33,11 +33,13 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     setRemainingSeconds(nextRemaining)
 
     if (nextRemaining <= 0) {
+      const completedEndsAt = endTimeRef.current
       setIsRunning(false)
       isRunningRef.current = false
       endTimeRef.current = null
       if (!suppressCompleteRef.current) {
-        onCompleteRef.current?.()
+        // 만료된 endsAt 을 넘겨 다음 레벨이 previousEndsAt + duration 으로 체인되게 한다.
+        onCompleteRef.current?.(completedEndsAt)
       }
       suppressCompleteRef.current = false
       // onComplete → reset({ autoStart: true }) 가 동기적으로 endTimeRef 를 다시 심을 수 있다.
@@ -107,11 +109,22 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     return { isRunning: true, remainingSeconds, endsAt }
   }, [isRunning, pause, remainingSeconds, start])
 
-  const reset = useCallback((seconds = initialSeconds, { autoStart = false } = {}) => {
+  /**
+   * @param {number} [seconds]
+   * @param {{ autoStart?: boolean, chainFromEndsAt?: number | null }} [options]
+   *   chainFromEndsAt: 자동 레벨업 시 이전 레벨의 절대 endsAt.
+   *   있으면 endsAt = chainFromEndsAt + duration (로컬 시계 오차 누적 방지).
+   *   없으면 syncedNow() + duration (수동 시작/스킵).
+   */
+  const reset = useCallback((seconds = initialSeconds, { autoStart = false, chainFromEndsAt = null } = {}) => {
     const safeSeconds = Math.max(0, Number.isFinite(seconds) ? seconds : 0)
     setRemainingSeconds(safeSeconds)
     if (autoStart && safeSeconds > 0) {
-      endTimeRef.current = syncedNow() + safeSeconds * 1000
+      const anchor =
+        typeof chainFromEndsAt === 'number' && Number.isFinite(chainFromEndsAt)
+          ? chainFromEndsAt
+          : syncedNow()
+      endTimeRef.current = anchor + safeSeconds * 1000
       isRunningRef.current = true
       setIsRunning(true)
       return { isRunning: true, remainingSeconds: safeSeconds, endsAt: endTimeRef.current }
@@ -148,10 +161,11 @@ export function useTimer(initialSeconds, { onComplete } = {}) {
     setRemainingSeconds(next)
 
     if (next <= 0) {
+      const completedEndsAt = endTimeRef.current
       isRunningRef.current = false
       setIsRunning(false)
       endTimeRef.current = null
-      onCompleteRef.current?.()
+      onCompleteRef.current?.(completedEndsAt)
       // 블라인드 자동 전환이 endTimeRef 를 다시 심었으면 틱이 멈추지 않게 복구
       if (endTimeRef.current) {
         isRunningRef.current = true

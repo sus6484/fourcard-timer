@@ -1,12 +1,17 @@
 import { doc, getDocFromServer, serverTimestamp, setDoc } from 'firebase/firestore'
 import { getFirebaseAuth, getFirebaseDb, isFirebaseConfigured } from './firebase.js'
 
-/** 주기적 재측정 간격 (30분) */
-const CLOCK_RESYNC_MS = 30 * 60 * 1000
+/** 주기적 재측정 간격 (5분) — Smart TV 시계 드리프트 대응 */
+const CLOCK_RESYNC_MS = 5 * 60 * 1000
 /** force=false 일 때 최소 간격 (중복 호출 가드) */
 const CLOCK_RESYNC_MIN_GAP_MS = 60 * 1000
 /** 비정상 offset 가드 (±24시간) */
 const MAX_OFFSET_ABS_MS = 24 * 60 * 60 * 1000
+/** 1회 sync 당 NTP 스타일 샘플 수 (중앙값 사용) */
+const CLOCK_SAMPLE_COUNT = 3
+/** 샘플 사이 짧은 대기 (연속 쓰기가 같은 ms에 몰리지 않게) */
+const CLOCK_SAMPLE_GAP_MS = 80
+const DEVICE_ID_STORAGE_KEY = 'fourcard_clock_device_id'
 
 let clockOffsetMs = 0
 let clockOffsetUpdatedAt = 0
@@ -16,6 +21,7 @@ let lastClockSyncAt = 0
 let started = false
 /** 권한 없음이 확인되면 로그인 전까지 Firestore 시계 sync 를 건너뛴다 */
 let clockSyncUnavailable = false
+let cachedDeviceId = null
 
 /**
  * 서버 시각에 맞춘 현재 시각(ms).
@@ -42,9 +48,33 @@ export function setClockOffsetMs(offsetMs) {
   clockOffsetUpdatedAt = Date.now()
 }
 
+function getClockDeviceId() {
+  if (cachedDeviceId) return cachedDeviceId
+  try {
+    let id = localStorage.getItem(DEVICE_ID_STORAGE_KEY)
+    if (!id) {
+      id =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `d_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+      localStorage.setItem(DEVICE_ID_STORAGE_KEY, id)
+    }
+    cachedDeviceId = id
+    return id
+  } catch {
+    cachedDeviceId = `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    return cachedDeviceId
+  }
+}
+
+/**
+ * 기기별 clockSync 문서.
+ * 공유 문서(__fourcard_clock)를 쓰면 멀티비전 동시 sync 시 RTT/offset 측정이 서로 덮어써진다.
+ */
 function clockRef() {
-  // 로그인 사용자 누구나 읽고 쓸 수 있는 전용 문서 (firestore.rules 참고)
-  return doc(getFirebaseDb(), 'clockSync', '__fourcard_clock')
+  const uid = getFirebaseAuth()?.currentUser?.uid ?? 'anon'
+  const deviceId = getClockDeviceId()
+  return doc(getFirebaseDb(), 'clockSync', `${uid}_${deviceId}`)
 }
 
 function parseServerMillis(serverTime) {
@@ -80,6 +110,53 @@ function isPermissionError(err) {
   )
 }
 
+function median(numbers) {
+  const sorted = [...numbers].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  if (sorted.length % 2 === 0) {
+    return Math.round((sorted[mid - 1] + sorted[mid]) / 2)
+  }
+  return sorted[mid]
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
+}
+
+/**
+ * Firestore serverTimestamp 왕복 1회 측정.
+ * @returns {Promise<{ offset: number, rtt: number } | null>}
+ */
+async function measureOffsetSample(ref) {
+  const t0 = Date.now()
+  await setDoc(
+    ref,
+    {
+      serverTime: serverTimestamp(),
+      clientSentAt: t0,
+      purpose: 'clock-sync',
+      deviceId: getClockDeviceId(),
+    },
+    { merge: true },
+  )
+
+  const snap = await getDocFromServer(ref)
+  const t1 = Date.now()
+  const data = snap?.data?.() ?? null
+  const serverMs = parseServerMillis(data?.serverTime)
+
+  if (!Number.isFinite(serverMs)) {
+    return null
+  }
+
+  const rtt = Math.max(0, t1 - t0)
+  // 왕복의 중간 시점에 서버 시각이 기록됐다고 가정
+  const offset = Math.round(serverMs - (t0 + rtt / 2))
+  return { offset, rtt }
+}
+
 /**
  * Firestore serverTimestamp 로 로컬 시계 오차(offset)를 측정한다.
  * offset ≈ serverNow - Date.now()
@@ -111,41 +188,38 @@ export function syncServerClockOffset(force = false) {
   }
 
   clockSyncInFlight = (async () => {
-    const t0 = Date.now()
     try {
-      lastClockSyncAt = t0
-      await setDoc(
-        clockRef(),
-        {
-          serverTime: serverTimestamp(),
-          clientSentAt: t0,
-          purpose: 'clock-sync',
-        },
-        { merge: true },
-      )
+      lastClockSyncAt = Date.now()
+      const ref = clockRef()
+      const samples = []
 
-      const snap = await getDocFromServer(clockRef())
-      const t1 = Date.now()
-      const data = snap?.data?.() ?? null
-      const serverMs = parseServerMillis(data?.serverTime)
+      for (let i = 0; i < CLOCK_SAMPLE_COUNT; i += 1) {
+        if (i > 0) {
+          await sleep(CLOCK_SAMPLE_GAP_MS)
+        }
+        const sample = await measureOffsetSample(ref)
+        if (sample) {
+          samples.push(sample)
+        }
+      }
 
-      if (!Number.isFinite(serverMs)) {
-        console.warn('[FourcardClock] serverTimestamp 파싱 실패')
+      if (samples.length === 0) {
+        console.warn('[FourcardClock] serverTimestamp 파싱 실패 (샘플 0)')
         return null
       }
 
-      const rtt = Math.max(0, t1 - t0)
-      // 왕복의 중간 시점에 서버 시각이 기록됐다고 가정
-      const offset = Math.round(serverMs - (t0 + rtt / 2))
+      const offset = median(samples.map((s) => s.offset))
+      const rttMedian = median(samples.map((s) => s.rtt))
       setClockOffsetMs(offset)
       clockSyncUnavailable = false
 
-      // 임시 확인용 로그 — 기기 간 Offset 보정 값
       console.log(
         '[FourcardClock] offsetMs=',
         offset,
         'rttMs=',
-        rtt,
+        rttMedian,
+        'samples=',
+        samples.length,
         'syncedNow=',
         syncedNow(),
         'localNow=',
@@ -169,7 +243,7 @@ export function syncServerClockOffset(force = false) {
   return clockSyncInFlight
 }
 
-/** 앱 기동 시 1회 + 30분 주기 백그라운드 재측정 */
+/** 앱 기동 시 1회 + 5분 주기 백그라운드 재측정 */
 export function startClockOffsetSync() {
   clockSyncUnavailable = false
   if (started) {

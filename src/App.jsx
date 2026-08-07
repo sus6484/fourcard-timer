@@ -377,7 +377,7 @@ export default function App() {
     getSnapshot,
     syncFromServerClock,
   } = useTimer(initialSeconds, {
-    onComplete: () => completeHandlerRef.current?.(),
+    onComplete: (completedEndsAt) => completeHandlerRef.current?.(completedEndsAt),
   })
 
   resetRef.current = reset
@@ -433,7 +433,7 @@ export default function App() {
     announceUpcomingLevel,
   ])
 
-  const handleLevelComplete = useCallback(() => {
+  const handleLevelComplete = useCallback((completedEndsAt) => {
     const schedule = levelsRef.current
     if (!schedule.length) return
 
@@ -462,7 +462,15 @@ export default function App() {
       levelIndexRef.current = nextIndex
       setLevelIndex(nextIndex)
 
-      const snapshot = reset(nextSeconds, { autoStart: true })
+      // 자동 전환: 이전 레벨 절대 endsAt + duration (기기별 syncedNow 오차 누적 방지)
+      const chainFromEndsAt =
+        typeof completedEndsAt === 'number' && Number.isFinite(completedEndsAt)
+          ? completedEndsAt
+          : null
+      const snapshot = reset(nextSeconds, {
+        autoStart: true,
+        chainFromEndsAt,
+      })
       publishTimerState({
         levelIndex: nextIndex,
         isRunning: snapshot.isRunning,
@@ -518,12 +526,15 @@ export default function App() {
     const remoteRemaining = deriveRemainingFromSession(session)
 
     // 원격은 아직 running인데 endsAt이 지난 경우 → 로컬에서 레벨 완료 처리
+    // session.endsAt 을 넘겨 다음 레벨 endsAt 체인에 사용
     if (
       remoteRunning &&
       remoteRemaining <= 0 &&
       remoteLevelIndex === levelIndexRef.current
     ) {
-      completeHandlerRef.current?.()
+      completeHandlerRef.current?.(
+        typeof session.endsAt === 'number' ? session.endsAt : null,
+      )
       return
     }
 
@@ -543,7 +554,9 @@ export default function App() {
       remoteLevelIndex === levelIndexRef.current &&
       remoteLevelIndex < levelsRef.current.length - 1
     ) {
-      completeHandlerRef.current?.()
+      completeHandlerRef.current?.(
+        typeof session.endsAt === 'number' ? session.endsAt : null,
+      )
       return
     }
 
@@ -586,8 +599,9 @@ export default function App() {
     applyRemoteSessionRef.current?.(session)
 
     if (remoteExpiredOnOtherLevel) {
+      const expiredEndsAt = typeof session.endsAt === 'number' ? session.endsAt : null
       window.setTimeout(() => {
-        completeHandlerRef.current?.()
+        completeHandlerRef.current?.(expiredEndsAt)
       }, 0)
     }
   }, [])
