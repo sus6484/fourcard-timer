@@ -7,9 +7,13 @@ const CLOCK_RESYNC_MS = 5 * 60 * 1000
 const CLOCK_RESYNC_MIN_GAP_MS = 60 * 1000
 /** 비정상 offset 가드 (±24시간) */
 const MAX_OFFSET_ABS_MS = 24 * 60 * 60 * 1000
-/** 1회 sync 당 NTP 스타일 샘플 수 (중앙값 사용) */
+/** 목표로 모을 “신뢰 가능” 샘플 수 */
 const CLOCK_SAMPLE_COUNT = 3
-/** 샘플 사이 짧은 대기 (연속 쓰기가 같은 ms에 몰리지 않게) */
+/** RTT 가 이 값을 넘으면 샘플 폐기 (Wi‑Fi 지연 스파이크) */
+const MAX_GOOD_RTT_MS = 1000
+/** 폐기 포함 최대 측정 시도 횟수 */
+const MAX_SAMPLE_ATTEMPTS = 8
+/** 샘플 사이 짧은 대기 */
 const CLOCK_SAMPLE_GAP_MS = 80
 const DEVICE_ID_STORAGE_KEY = 'fourcard_clock_device_id'
 
@@ -77,7 +81,7 @@ function clockRef() {
   return doc(getFirebaseDb(), 'clockSync', `${uid}_${deviceId}`)
 }
 
-function parseServerMillis(serverTime) {
+export function parseTimestampMillis(serverTime) {
   if (!serverTime) return NaN
   if (typeof serverTime.toMillis === 'function') {
     return serverTime.toMillis()
@@ -87,6 +91,9 @@ function parseServerMillis(serverTime) {
       Number(serverTime.seconds) * 1000 +
       Math.floor(Number(serverTime.nanoseconds || 0) / 1e6)
     )
+  }
+  if (typeof serverTime === 'number' && Number.isFinite(serverTime)) {
+    return serverTime
   }
   return NaN
 }
@@ -145,7 +152,7 @@ async function measureOffsetSample(ref) {
   const snap = await getDocFromServer(ref)
   const t1 = Date.now()
   const data = snap?.data?.() ?? null
-  const serverMs = parseServerMillis(data?.serverTime)
+  const serverMs = parseTimestampMillis(data?.serverTime)
 
   if (!Number.isFinite(serverMs)) {
     return null
@@ -155,6 +162,64 @@ async function measureOffsetSample(ref) {
   // 왕복의 중간 시점에 서버 시각이 기록됐다고 가정
   const offset = Math.round(serverMs - (t0 + rtt / 2))
   return { offset, rtt }
+}
+
+/**
+ * RTT 가 정상인 샘플을 모은다. 스파이크는 버리고 재시도한다.
+ * @returns {Promise<{ good: Array<{offset:number,rtt:number}>, discarded: number, all: Array<{offset:number,rtt:number}> }>}
+ */
+async function collectOffsetSamples(ref) {
+  const good = []
+  const all = []
+  let discarded = 0
+
+  for (let attempt = 0; attempt < MAX_SAMPLE_ATTEMPTS; attempt += 1) {
+    if (good.length >= CLOCK_SAMPLE_COUNT) break
+    if (attempt > 0) {
+      await sleep(CLOCK_SAMPLE_GAP_MS)
+    }
+
+    const sample = await measureOffsetSample(ref)
+    if (!sample) continue
+
+    all.push(sample)
+    if (sample.rtt > MAX_GOOD_RTT_MS) {
+      discarded += 1
+      console.warn(
+        '[FourcardClock] discard high-RTT sample rttMs=',
+        sample.rtt,
+        `(limit ${MAX_GOOD_RTT_MS})`,
+      )
+      continue
+    }
+    good.push(sample)
+  }
+
+  return { good, discarded, all }
+}
+
+/**
+ * 신뢰 샘플이 있으면 최저 RTT 샘플의 offset 을 쓰고,
+ * 중앙값으로 한 번 더 안정화한다 (샘플 2개 이상).
+ * 없으면 전체 중 최저 RTT 로 폴백.
+ */
+function pickOffsetFromSamples(good, all) {
+  const pool = good.length > 0 ? good : all
+  if (pool.length === 0) return null
+
+  const best = pool.reduce((a, b) => (a.rtt <= b.rtt ? a : b))
+  if (pool.length === 1) {
+    return { offset: best.offset, rtt: best.rtt, used: 1 }
+  }
+
+  // 최저 RTT 근처 샘플만으로 중앙값 (이상치 offset 완화)
+  const sortedByRtt = [...pool].sort((a, b) => a.rtt - b.rtt)
+  const top = sortedByRtt.slice(0, Math.min(CLOCK_SAMPLE_COUNT, sortedByRtt.length))
+  return {
+    offset: median(top.map((s) => s.offset)),
+    rtt: best.rtt,
+    used: top.length,
+  }
 }
 
 /**
@@ -191,42 +256,35 @@ export function syncServerClockOffset(force = false) {
     try {
       lastClockSyncAt = Date.now()
       const ref = clockRef()
-      const samples = []
+      const { good, discarded, all } = await collectOffsetSamples(ref)
+      const picked = pickOffsetFromSamples(good, all)
 
-      for (let i = 0; i < CLOCK_SAMPLE_COUNT; i += 1) {
-        if (i > 0) {
-          await sleep(CLOCK_SAMPLE_GAP_MS)
-        }
-        const sample = await measureOffsetSample(ref)
-        if (sample) {
-          samples.push(sample)
-        }
-      }
-
-      if (samples.length === 0) {
+      if (!picked) {
         console.warn('[FourcardClock] serverTimestamp 파싱 실패 (샘플 0)')
         return null
       }
 
-      const offset = median(samples.map((s) => s.offset))
-      const rttMedian = median(samples.map((s) => s.rtt))
-      setClockOffsetMs(offset)
+      setClockOffsetMs(picked.offset)
       clockSyncUnavailable = false
 
       console.log(
         '[FourcardClock] offsetMs=',
-        offset,
+        picked.offset,
         'rttMs=',
-        rttMedian,
-        'samples=',
-        samples.length,
+        picked.rtt,
+        'goodSamples=',
+        good.length,
+        'discarded=',
+        discarded,
+        'fallback=',
+        good.length === 0,
         'syncedNow=',
         syncedNow(),
         'localNow=',
         Date.now(),
       )
 
-      return offset
+      return picked.offset
     } catch (err) {
       if (isPermissionError(err)) {
         // 비로그인·규칙 거절: 로컬 시계로 조용히 fallback (타이머 흐름을 막지 않음)

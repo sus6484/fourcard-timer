@@ -40,6 +40,7 @@ service cloud.firestore {
 
     // 기기별 Absolute Time 보정용 (serverTimestamp 왕복 측정)
     // 문서 ID: {uid}_{deviceId} — 멀티비전 동시 sync 충돌 방지
+    // 세션 시작 앵커는 sessions/{branchId}.startedAt (serverTimestamp) 사용
     match /clockSync/{docId} {
       allow read, write: if signedIn();
     }

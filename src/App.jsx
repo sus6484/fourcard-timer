@@ -50,10 +50,15 @@ import {
   updateGlobalGames,
 } from './lib/settings.js'
 import {
+  buildPausedPatch,
+  buildRunningAbsoluteEndsAtPatch,
+  buildRunningServerStartPatch,
+  deriveEndsAtFromSession,
+  deriveRemainingFromSession,
   fetchSession,
   publishSession,
   subscribeSession,
-  deriveRemainingFromSession,
+  withDerivedEndsAt,
 } from './lib/sessionSync.js'
 import {
   ensureAudioRunning,
@@ -364,6 +369,25 @@ export default function App() {
     }
   }, [])
 
+  /**
+   * startedAt: serverTimestamp() 발행 후 서버에 확정된 시각으로 로컬 타이머를 재정렬.
+   * (자체 revision 스냅샷은 스킵되므로 getDocFromServer 로 강제 보정)
+   */
+  const reconcileAfterServerStart = useCallback(async () => {
+    const branchId = activeBranchIdRef.current
+    if (!branchId) return
+    try {
+      const session = await fetchSession(branchId)
+      if (!session?.isRunning) return
+      const derived = withDerivedEndsAt(session)
+      if (typeof derived?.endsAt !== 'number') return
+      applyRemoteSessionRef.current?.(derived)
+      syncFromServerClockRef.current?.()
+    } catch (error) {
+      console.log('[session] reconcile after server start failed:', error)
+    }
+  }, [])
+
   const completeHandlerRef = useRef(() => {})
 
   const {
@@ -374,7 +398,6 @@ export default function App() {
     adjustSeconds,
     setSeconds,
     applyRemoteSession,
-    getSnapshot,
     syncFromServerClock,
   } = useTimer(initialSeconds, {
     onComplete: (completedEndsAt) => completeHandlerRef.current?.(completedEndsAt),
@@ -471,12 +494,14 @@ export default function App() {
         autoStart: true,
         chainFromEndsAt,
       })
+      // 체인된 절대 endsAt 사용 (startedAt 아님 — 이미 서버 스케줄에 정렬됨)
       publishTimerState({
         levelIndex: nextIndex,
-        isRunning: snapshot.isRunning,
-        endsAt: snapshot.endsAt,
-        remainingSeconds: snapshot.remainingSeconds,
         activeGameId: settingsRef.current.activeGlobalGameId,
+        ...buildRunningAbsoluteEndsAtPatch(
+          snapshot.endsAt,
+          snapshot.remainingSeconds,
+        ),
       })
       // 로그인된 기기만 서버 시계 보정 (비로그인은 로컬 시각 fallback)
       if (authUidRef.current) {
@@ -487,10 +512,8 @@ export default function App() {
 
     localAuthorityUntilRef.current = Date.now() + 2000
     publishTimerState({
-      isRunning: false,
-      endsAt: null,
-      remainingSeconds: 0,
       levelIndex: currentIndex,
+      ...buildPausedPatch(0),
     })
   }, [
     announceUpcomingLevel,
@@ -525,16 +548,16 @@ export default function App() {
     const remoteRunning = Boolean(session.isRunning)
     const remoteRemaining = deriveRemainingFromSession(session)
 
+    const derivedEndsAt = deriveEndsAtFromSession(session)
+
     // 원격은 아직 running인데 endsAt이 지난 경우 → 로컬에서 레벨 완료 처리
-    // session.endsAt 을 넘겨 다음 레벨 endsAt 체인에 사용
+    // 파생 endsAt 을 넘겨 다음 레벨 endsAt 체인에 사용
     if (
       remoteRunning &&
       remoteRemaining <= 0 &&
       remoteLevelIndex === levelIndexRef.current
     ) {
-      completeHandlerRef.current?.(
-        typeof session.endsAt === 'number' ? session.endsAt : null,
-      )
+      completeHandlerRef.current?.(derivedEndsAt)
       return
     }
 
@@ -554,9 +577,7 @@ export default function App() {
       remoteLevelIndex === levelIndexRef.current &&
       remoteLevelIndex < levelsRef.current.length - 1
     ) {
-      completeHandlerRef.current?.(
-        typeof session.endsAt === 'number' ? session.endsAt : null,
-      )
+      completeHandlerRef.current?.(derivedEndsAt)
       return
     }
 
@@ -596,12 +617,11 @@ export default function App() {
       setLevelIndex(remoteLevelIndex)
     }
 
-    applyRemoteSessionRef.current?.(session)
+    applyRemoteSessionRef.current?.(withDerivedEndsAt(session))
 
     if (remoteExpiredOnOtherLevel) {
-      const expiredEndsAt = typeof session.endsAt === 'number' ? session.endsAt : null
       window.setTimeout(() => {
-        completeHandlerRef.current?.(expiredEndsAt)
+        completeHandlerRef.current?.(derivedEndsAt)
       }, 0)
     }
   }, [])
@@ -655,10 +675,8 @@ export default function App() {
     if (autoStart && activeBranchIdRef.current && snapshot) {
       publishTimerStateRef.current?.({
         levelIndex: levelIndexRef.current,
-        isRunning: snapshot.isRunning,
-        endsAt: snapshot.endsAt,
-        remainingSeconds: snapshot.remainingSeconds,
         activeGameId: settingsRef.current.activeGlobalGameId,
+        ...buildRunningServerStartPatch(snapshot.remainingSeconds),
       })
     }
   }, [activeGame?.id, levelIndex, initialSeconds])
@@ -827,9 +845,7 @@ export default function App() {
       publishTimerState({
         activeGameId: gameId,
         levelIndex: 0,
-        isRunning: false,
-        endsAt: null,
-        remainingSeconds: seconds,
+        ...buildPausedPatch(seconds),
       })
     }
   }
@@ -844,9 +860,7 @@ export default function App() {
         const seconds = levelSeconds(levels[nextIndex])
         publishTimerState({
           levelIndex: nextIndex,
-          isRunning: false,
-          endsAt: null,
-          remainingSeconds: seconds,
+          ...buildPausedPatch(seconds),
         })
         if (authUidRef.current) void syncServerClockOffset(false)
       }
@@ -856,15 +870,33 @@ export default function App() {
       if (!isRunning && levelIndex === 0 && remainingSeconds === initialSeconds) {
         speakGameStart()
       }
-      const snapshot = toggle()
-      publishTimerState({
-        levelIndex,
-        isRunning: snapshot.isRunning,
-        endsAt: snapshot.endsAt,
-        remainingSeconds: snapshot.remainingSeconds,
-      })
-      // 시작/정지 시 서버 시계 offset 조용히 재측정 (로그인 시에만)
-      if (authUidRef.current) void syncServerClockOffset(true)
+      const wasRunning = isRunning
+      if (wasRunning) {
+        // 정지: offset 보정 후 남은 초를 확정·발행
+        void (async () => {
+          if (authUidRef.current) {
+            await syncServerClockOffset(true)
+          }
+          const snapshot = toggle()
+          await publishTimerState({
+            levelIndex,
+            ...buildPausedPatch(snapshot.remainingSeconds),
+          })
+        })()
+      } else {
+        // 시작: UI 는 즉시, endsAt 기준점은 serverTimestamp 앵커로 확정
+        const snapshot = toggle()
+        void (async () => {
+          if (authUidRef.current) {
+            await syncServerClockOffset(true)
+          }
+          await publishTimerState({
+            levelIndex,
+            ...buildRunningServerStartPatch(snapshot.remainingSeconds),
+          })
+          await reconcileAfterServerStart()
+        })()
+      }
       return
     }
     if (action === 'next') {
@@ -884,39 +916,62 @@ export default function App() {
         localAuthorityUntilRef.current = Date.now() + 2000
         levelIndexRef.current = nextIndex
         setLevelIndex(nextIndex)
-        const snapshot = reset(seconds, { autoStart: true })
-        publishTimerState({
-          levelIndex: nextIndex,
-          isRunning: snapshot.isRunning,
-          endsAt: snapshot.endsAt,
-          remainingSeconds: snapshot.remainingSeconds,
-        })
-        if (authUidRef.current) void syncServerClockOffset(false)
+        void (async () => {
+          if (authUidRef.current) {
+            await syncServerClockOffset(true)
+          }
+          reset(seconds, { autoStart: true })
+          await publishTimerState({
+            levelIndex: nextIndex,
+            ...buildRunningServerStartPatch(seconds),
+          })
+          await reconcileAfterServerStart()
+        })()
       }
       return
     }
     if (action === 'minus10') {
       setResetConfirm(false)
-      const snapshot = adjustSeconds(-10)
-      publishTimerState({
-        levelIndex,
-        isRunning: snapshot.isRunning,
-        endsAt: snapshot.endsAt,
-        remainingSeconds: snapshot.remainingSeconds,
-      })
-      if (authUidRef.current) void syncServerClockOffset(false)
+      void (async () => {
+        if (authUidRef.current) {
+          await syncServerClockOffset(true)
+        }
+        const snapshot = adjustSeconds(-10)
+        if (snapshot.isRunning) {
+          await publishTimerState({
+            levelIndex,
+            ...buildRunningServerStartPatch(snapshot.remainingSeconds),
+          })
+          await reconcileAfterServerStart()
+        } else {
+          await publishTimerState({
+            levelIndex,
+            ...buildPausedPatch(snapshot.remainingSeconds),
+          })
+        }
+      })()
       return
     }
     if (action === 'plus10') {
       setResetConfirm(false)
-      const snapshot = adjustSeconds(10)
-      publishTimerState({
-        levelIndex,
-        isRunning: snapshot.isRunning,
-        endsAt: snapshot.endsAt,
-        remainingSeconds: snapshot.remainingSeconds,
-      })
-      if (authUidRef.current) void syncServerClockOffset(false)
+      void (async () => {
+        if (authUidRef.current) {
+          await syncServerClockOffset(true)
+        }
+        const snapshot = adjustSeconds(10)
+        if (snapshot.isRunning) {
+          await publishTimerState({
+            levelIndex,
+            ...buildRunningServerStartPatch(snapshot.remainingSeconds),
+          })
+          await reconcileAfterServerStart()
+        } else {
+          await publishTimerState({
+            levelIndex,
+            ...buildPausedPatch(snapshot.remainingSeconds),
+          })
+        }
+      })()
       return
     }
     if (action === 'reset') {
@@ -930,9 +985,7 @@ export default function App() {
       setResetConfirm(false)
       publishTimerState({
         levelIndex: 0,
-        isRunning: false,
-        endsAt: null,
-        remainingSeconds: firstLevelSeconds,
+        ...buildPausedPatch(firstLevelSeconds),
       })
       if (authUidRef.current) void syncServerClockOffset(true)
     }
@@ -1035,8 +1088,8 @@ export default function App() {
   const persistMemo = (nextSettings) => {
     persistSettings(nextSettings)
     if (!activeBranchId) return
+    // 메모만 갱신 — getSnapshot() endsAt 을 넣으면 startedAt 앵커와 충돌할 수 있음
     publishTimerState({
-      ...getSnapshot(),
       levelIndex,
       screenMemo: nextSettings.screenMemo,
       memoFontSize: nextSettings.memoFontSize,
@@ -1313,14 +1366,24 @@ export default function App() {
                   onToggle={() => handleControl('toggle')}
                   onSeek={(seconds) => {
                     setResetConfirm(false)
-                    const snapshot = setSeconds(seconds)
-                    publishTimerState({
-                      levelIndex,
-                      isRunning: snapshot.isRunning,
-                      endsAt: snapshot.endsAt,
-                      remainingSeconds: snapshot.remainingSeconds,
-                    })
-                    if (authUidRef.current) void syncServerClockOffset(false)
+                    void (async () => {
+                      if (authUidRef.current) {
+                        await syncServerClockOffset(true)
+                      }
+                      const snapshot = setSeconds(seconds)
+                      if (snapshot.isRunning) {
+                        await publishTimerState({
+                          levelIndex,
+                          ...buildRunningServerStartPatch(snapshot.remainingSeconds),
+                        })
+                        await reconcileAfterServerStart()
+                      } else {
+                        await publishTimerState({
+                          levelIndex,
+                          ...buildPausedPatch(snapshot.remainingSeconds),
+                        })
+                      }
+                    })()
                   }}
                 />
               </div>
