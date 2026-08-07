@@ -23,6 +23,7 @@ import {
   startClockOffsetSync,
   stopClockOffsetSync,
   syncServerClockOffset,
+  calibrateOffsetFromStartedAt,
 } from './lib/serverClock.js'
 import {
   fetchPresetsFromCloud,
@@ -379,6 +380,10 @@ export default function App() {
     try {
       const session = await fetchSession(branchId)
       if (!session?.isRunning) return
+      // 서버 startedAt 으로 offset 을 맞춘 뒤 endsAt 을 파생·적용
+      if (typeof session.startedAt === 'number') {
+        calibrateOffsetFromStartedAt(session.startedAt)
+      }
       const derived = withDerivedEndsAt(session)
       if (typeof derived?.endsAt !== 'number') return
       applyRemoteSessionRef.current?.(derived)
@@ -546,8 +551,14 @@ export default function App() {
 
     const remoteLevelIndex = Number(session.levelIndex) || 0
     const remoteRunning = Boolean(session.isRunning)
-    const remoteRemaining = deriveRemainingFromSession(session)
 
+    // 시작 직후 startedAt 이 있으면 offset 을 서버 앵커에 맞춰 재보정 (15:04 류 오차 차단)
+    // 남은 시간·만료 판정은 보정 이후에 수행한다.
+    if (remoteRunning && typeof session.startedAt === 'number') {
+      calibrateOffsetFromStartedAt(session.startedAt)
+    }
+
+    const remoteRemaining = deriveRemainingFromSession(session)
     const derivedEndsAt = deriveEndsAtFromSession(session)
 
     // 원격은 아직 running인데 endsAt이 지난 경우 → 로컬에서 레벨 완료 처리

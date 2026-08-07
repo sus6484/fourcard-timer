@@ -7,14 +7,29 @@ const CLOCK_RESYNC_MS = 5 * 60 * 1000
 const CLOCK_RESYNC_MIN_GAP_MS = 60 * 1000
 /** 비정상 offset 가드 (±24시간) */
 const MAX_OFFSET_ABS_MS = 24 * 60 * 60 * 1000
-/** 목표로 모을 “신뢰 가능” 샘플 수 */
-const CLOCK_SAMPLE_COUNT = 3
-/** RTT 가 이 값을 넘으면 샘플 폐기 (Wi‑Fi 지연 스파이크) */
+
+/** NTP 스타일: 한 라운드에서 모을 샘플 수 */
+const CLOCK_SAMPLE_TARGET = 6
+/** 신뢰 RTT 상한 — 초과분은 폐기하고 추가 시도 */
 const MAX_GOOD_RTT_MS = 1000
-/** 폐기 포함 최대 측정 시도 횟수 */
-const MAX_SAMPLE_ATTEMPTS = 8
+/** 샘플 라운드 + 재시도 포함 최대 시도 */
+const MAX_SAMPLE_ATTEMPTS = 12
+/** 전체 sync 타임아웃 (무한 재시도 방지) */
+const MAX_SYNC_BUDGET_MS = 12_000
+/** min-RTT 로 채택할 샘플 수 (최저 1~2개) */
+const MIN_RTT_KEEP = 2
 /** 샘플 사이 짧은 대기 */
-const CLOCK_SAMPLE_GAP_MS = 80
+const CLOCK_SAMPLE_GAP_MS = 50
+
+/**
+ * startedAt 보정: 현재 시계로 본 “시작 후 경과”가 이보다 크면 mid-level 로 보고 스킵.
+ * (음수면 로컬 syncedNow 가 서버보다 느린 新鮮 시작 — 보정 대상으로)
+ */
+const STARTED_AT_MAX_AGE_MS = 10_000
+const STARTED_AT_MIN_AGE_MS = -60_000
+/** startedAt 수신 지연을 약간 보정 (느린 표시보다 빠른 표시가 덜 해로움) */
+const STARTED_AT_ONE_WAY_ASSUME_MS = 80
+
 const DEVICE_ID_STORAGE_KEY = 'fourcard_clock_device_id'
 
 let clockOffsetMs = 0
@@ -26,6 +41,8 @@ let started = false
 /** 권한 없음이 확인되면 로그인 전까지 Firestore 시계 sync 를 건너뛴다 */
 let clockSyncUnavailable = false
 let cachedDeviceId = null
+/** 동일 startedAt 으로 중복 보정하지 않음 */
+let lastStartedAtCalibrationKey = null
 
 /**
  * 서버 시각에 맞춘 현재 시각(ms).
@@ -117,15 +134,6 @@ function isPermissionError(err) {
   )
 }
 
-function median(numbers) {
-  const sorted = [...numbers].sort((a, b) => a - b)
-  const mid = Math.floor(sorted.length / 2)
-  if (sorted.length % 2 === 0) {
-    return Math.round((sorted[mid - 1] + sorted[mid]) / 2)
-  }
-  return sorted[mid]
-}
-
 function sleep(ms) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms)
@@ -159,22 +167,26 @@ async function measureOffsetSample(ref) {
   }
 
   const rtt = Math.max(0, t1 - t0)
-  // 왕복의 중간 시점에 서버 시각이 기록됐다고 가정
+  // 왕복의 중간 시점에 서버 시각이 기록됐다고 가정 (비대칭 시 min-RTT 샘플이 오차 최소)
   const offset = Math.round(serverMs - (t0 + rtt / 2))
   return { offset, rtt }
 }
 
 /**
- * RTT 가 정상인 샘플을 모은다. 스파이크는 버리고 재시도한다.
- * @returns {Promise<{ good: Array<{offset:number,rtt:number}>, discarded: number, all: Array<{offset:number,rtt:number}> }>}
+ * 샘플을 모은 뒤 RTT 가 작은 것부터 채택.
+ * good(RTT≤임계)이  Suffice 할 때까지 재시도하되 예산/횟수 상한을 둔다.
  */
 async function collectOffsetSamples(ref) {
   const good = []
   const all = []
   let discarded = 0
+  const budgetStarted = Date.now()
 
   for (let attempt = 0; attempt < MAX_SAMPLE_ATTEMPTS; attempt += 1) {
-    if (good.length >= CLOCK_SAMPLE_COUNT) break
+    if (Date.now() - budgetStarted > MAX_SYNC_BUDGET_MS) break
+    // good 이 충분하면 조기 종료 (최소 CLOCK_SAMPLE_TARGET 의 절반 이상 + keep 개수)
+    if (good.length >= CLOCK_SAMPLE_TARGET) break
+
     if (attempt > 0) {
       await sleep(CLOCK_SAMPLE_GAP_MS)
     }
@@ -199,36 +211,84 @@ async function collectOffsetSamples(ref) {
 }
 
 /**
- * 신뢰 샘플이 있으면 최저 RTT 샘플의 offset 을 쓰고,
- * 중앙값으로 한 번 더 안정화한다 (샘플 2개 이상).
- * 없으면 전체 중 최저 RTT 로 폴백.
+ * NTP 스타일: RTT 최저 1~2개 샘플의 offset 만 사용 (중앙값 미사용).
+ * good 이 없으면 all 중 최저 RTT 로 폴백.
  */
 function pickOffsetFromSamples(good, all) {
   const pool = good.length > 0 ? good : all
   if (pool.length === 0) return null
 
-  const best = pool.reduce((a, b) => (a.rtt <= b.rtt ? a : b))
-  if (pool.length === 1) {
-    return { offset: best.offset, rtt: best.rtt, used: 1 }
+  const sortedByRtt = [...pool].sort((a, b) => a.rtt - b.rtt)
+  const keep = sortedByRtt.slice(0, Math.min(MIN_RTT_KEEP, sortedByRtt.length))
+  const offset = Math.round(
+    keep.reduce((sum, s) => sum + s.offset, 0) / keep.length,
+  )
+  return {
+    offset,
+    rtt: keep[0].rtt,
+    used: keep.length,
+    keepOffsets: keep.map((s) => s.offset),
+  }
+}
+
+/**
+ * 세션 startedAt(serverTimestamp 해상값)으로 offset 을 즉시 재보정.
+ * 시작 직후 스냅샷에만 유효 — mid-level startedAt 은 “지금”이 아니므로 스킵.
+ *
+ * @param {number} startedAtMs
+ * @param {{ force?: boolean }} [options]
+ * @returns {number | null} 적용된 offset 또는 null
+ */
+export function calibrateOffsetFromStartedAt(startedAtMs, { force = false } = {}) {
+  if (!Number.isFinite(startedAtMs)) return null
+
+  const key = String(Math.round(startedAtMs))
+  if (!force && key === lastStartedAtCalibrationKey) {
+    return null
   }
 
-  // 최저 RTT 근처 샘플만으로 중앙값 (이상치 offset 완화)
-  const sortedByRtt = [...pool].sort((a, b) => a.rtt - b.rtt)
-  const top = sortedByRtt.slice(0, Math.min(CLOCK_SAMPLE_COUNT, sortedByRtt.length))
-  return {
-    offset: median(top.map((s) => s.offset)),
-    rtt: best.rtt,
-    used: top.length,
+  const receivedAt = Date.now()
+  const rawOffset = startedAtMs - receivedAt
+  if (Math.abs(rawOffset) > MAX_OFFSET_ABS_MS) {
+    console.warn('[FourcardClock] startedAt calibration rejected (abs offset too large)')
+    return null
   }
+
+  // 현재 offset 으로 본 시작 후 경과. 느린 syncedNow 면 음수가 되어 보정이 필요함을 드러냄.
+  const ageWithCurrent = receivedAt + clockOffsetMs - startedAtMs
+  if (ageWithCurrent > STARTED_AT_MAX_AGE_MS) {
+    // 이미 한참 진행 중인 레벨의 startedAt — “지금”으로 쓰면 안 됨
+    return null
+  }
+  if (ageWithCurrent < STARTED_AT_MIN_AGE_MS) {
+    return null
+  }
+
+  const nextOffset = Math.round(startedAtMs - receivedAt + STARTED_AT_ONE_WAY_ASSUME_MS)
+  const prev = clockOffsetMs
+  setClockOffsetMs(nextOffset)
+  lastStartedAtCalibrationKey = key
+
+  console.log(
+    '[FourcardClock] calibrated from startedAt offsetMs=',
+    nextOffset,
+    'prevOffsetMs=',
+    prev,
+    'deltaMs=',
+    nextOffset - prev,
+    'ageWithPrevMs=',
+    ageWithCurrent,
+    'startedAt=',
+    startedAtMs,
+  )
+
+  return nextOffset
 }
 
 /**
  * Firestore serverTimestamp 로 로컬 시계 오차(offset)를 측정한다.
  * offset ≈ serverNow - Date.now()
  * → syncedNow() = Date.now() + offset
- *
- * 비로그인·권한 없음이면 Firestore 호출 없이 null 을 반환하고
- * 로컬 Date.now() 기준(offset=0)으로 동작한다.
  *
  * @param {boolean} [force]
  * @returns {Promise<number | null>}
@@ -237,7 +297,6 @@ export function syncServerClockOffset(force = false) {
   if (!isFirebaseConfigured()) {
     return Promise.resolve(null)
   }
-  // 로그인 전이거나 이전에 권한 거절된 경우: Firestore 호출 자체를 건너뛴다.
   if (clockSyncUnavailable || !isSignedIn()) {
     return Promise.resolve(null)
   }
@@ -272,6 +331,10 @@ export function syncServerClockOffset(force = false) {
         picked.offset,
         'rttMs=',
         picked.rtt,
+        'minRttKeep=',
+        picked.used,
+        'keepOffsets=',
+        picked.keepOffsets,
         'goodSamples=',
         good.length,
         'discarded=',
@@ -287,7 +350,6 @@ export function syncServerClockOffset(force = false) {
       return picked.offset
     } catch (err) {
       if (isPermissionError(err)) {
-        // 비로그인·규칙 거절: 로컬 시계로 조용히 fallback (타이머 흐름을 막지 않음)
         clockSyncUnavailable = true
         return null
       }
@@ -325,4 +387,5 @@ export function stopClockOffsetSync() {
   started = false
   clockSyncUnavailable = false
   clockSyncInFlight = null
+  lastStartedAtCalibrationKey = null
 }
