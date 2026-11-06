@@ -341,6 +341,16 @@ export default function AdminPanel({
                 </label>
               </div>
 
+              <label className="admin-field admin-field--prize">
+                <span>상금</span>
+                <textarea
+                  rows={5}
+                  value={activeGame.prize ?? ''}
+                  placeholder={'1st 1,000,000\n2nd 500,000\n3rd 300,000'}
+                  onChange={(event) => updateActiveGame({ prize: event.target.value })}
+                />
+              </label>
+
             </section>
 
             <section className="admin-panel__section">

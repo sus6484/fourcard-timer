@@ -5,6 +5,7 @@ import Controls from './components/Controls.jsx'
 import LoginScreen from './components/LoginScreen.jsx'
 import TimeScrubber from './components/TimeScrubber.jsx'
 import MemoPanel from './components/MemoPanel.jsx'
+import PrizePanel from './components/PrizePanel.jsx'
 import TopGameBar from './components/TopGameBar.jsx'
 import { useTimer, useWakeLock } from './hooks/useTimer.js'
 import { DESIGN_HEIGHT, DESIGN_WIDTH, useFitScale } from './hooks/useFitScale.js'
@@ -84,6 +85,7 @@ export default function App() {
   const [resetConfirm, setResetConfirm] = useState(false)
   const [memoOpen, setMemoOpen] = useState(false)
   const [memoEditing, setMemoEditing] = useState(false)
+  const [prizeOpen, setPrizeOpen] = useState(false)
   const [globalSyncStatus, setGlobalSyncStatus] = useState('idle')
   const [globalSyncError, setGlobalSyncError] = useState('')
   const [presetsLinkStatus, setPresetsLinkStatus] = useState('idle')
@@ -108,6 +110,13 @@ export default function App() {
   const lastDoorongAtRef = useRef(0)
   const localAuthorityUntilRef = useRef(0)
   const lastPublishedRevisionRef = useRef(0)
+  const lastAppliedMemoRevRef = useRef(0)
+  const memoOpenRef = useRef(false)
+  const memoEditingRef = useRef(false)
+  const memoPublishTimerRef = useRef(null)
+  const memoSyncFlightRef = useRef(false)
+  const memoSyncPendingRef = useRef(false)
+  const publishMemoNowRef = useRef(() => {})
   const lastTimerSyncKeyRef = useRef('')
   const activeBranchIdRef = useRef('')
   const authUidRef = useRef(authSession?.uid || '')
@@ -357,9 +366,6 @@ export default function App() {
         {
           activeGameId: settingsRef.current.activeGlobalGameId,
           levelIndex: levelIndexRef.current,
-          screenMemo: settingsRef.current.screenMemo,
-          memoFontSize: settingsRef.current.memoFontSize,
-          memoColor: settingsRef.current.memoColor,
           revision,
           ...partial,
         },
@@ -539,7 +545,53 @@ export default function App() {
   const applyIncomingSession = useCallback((session) => {
     if (!session) return
 
-    // 로컬에서 방금 레벨을 넘긴 직후에는 원격 덮어쓰기를 잠시 무시
+    // 메모는 타이머 revision / 레벨 전환 가드와 따로 반영한다.
+    // 타이머 발행이 메모를 덮어쓰거나, 레벨 전환 2초 동안 메모가 버려지지 않게.
+    const memoRevision = Number(session.memoRevision) || 0
+    const hasNewerMemo = memoRevision > lastAppliedMemoRevRef.current
+    const legacyMemo =
+      !memoRevision &&
+      lastAppliedMemoRevRef.current === 0 &&
+      typeof session.screenMemo === 'string' &&
+      session.screenMemo.trim().length > 0
+
+    if ((hasNewerMemo || legacyMemo) && !memoEditingRef.current) {
+      if (hasNewerMemo) lastAppliedMemoRevRef.current = memoRevision
+      else lastAppliedMemoRevRef.current = 1
+
+      if (typeof session.memoOpen === 'boolean') {
+        memoOpenRef.current = session.memoOpen
+        setMemoOpen(session.memoOpen)
+        if (session.memoOpen) setPrizeOpen(false)
+        else {
+          memoEditingRef.current = false
+          setMemoEditing(false)
+        }
+      } else if (legacyMemo) {
+        memoOpenRef.current = true
+        setMemoOpen(true)
+        setPrizeOpen(false)
+      }
+
+      setSettings((current) => {
+        let next = current
+        if (typeof session.screenMemo === 'string' && session.screenMemo !== current.screenMemo) {
+          next = updateScreenMemo(next, session.screenMemo)
+        }
+        if (hasNewerMemo) {
+          const fontSize = Number(session.memoFontSize) || next.memoFontSize
+          const color = typeof session.memoColor === 'string' ? session.memoColor : next.memoColor
+          if (fontSize !== next.memoFontSize || color !== next.memoColor) {
+            next = updateMemoStyle(next, { fontSize, color })
+          }
+        }
+        if (next === current) return current
+        settingsRef.current = next
+        return next
+      })
+    }
+
+    // 로컬에서 방금 레벨을 넘긴 직후에는 원격 타이머 덮어쓰기를 잠시 무시
     if (Date.now() < localAuthorityUntilRef.current) {
       return
     }
@@ -611,15 +663,6 @@ export default function App() {
     if (session.activeGameId && session.activeGameId !== settingsRef.current.activeGlobalGameId) {
       skipLevelResetRef.current = true
       setSettings((current) => selectGlobalGame(current, session.activeGameId))
-    }
-
-    if (typeof session.screenMemo === 'string') {
-      setSettings((current) =>
-        updateMemoStyle(updateScreenMemo(current, session.screenMemo), {
-          fontSize: session.memoFontSize,
-          color: session.memoColor,
-        }),
-      )
     }
 
     if (remoteLevelIndex !== levelIndexRef.current) {
@@ -798,8 +841,94 @@ export default function App() {
   }, [authUid, activeBranchId])
 
   const persistSettings = (nextSettings) => {
+    settingsRef.current = nextSettings
     setSettings(nextSettings)
   }
+
+  const publishMemoNow = () => {
+    if (!activeBranchIdRef.current || !authUidRef.current) return
+    memoSyncPendingRef.current = true
+    if (memoSyncFlightRef.current) return
+
+    const send = () => {
+      const branchId = activeBranchIdRef.current
+      const uid = authUidRef.current
+      if (!memoSyncPendingRef.current || !branchId || !uid) {
+        memoSyncFlightRef.current = false
+        memoSyncPendingRef.current = false
+        return
+      }
+
+      memoSyncPendingRef.current = false
+      memoSyncFlightRef.current = true
+      const memoRevision = Math.max(Date.now(), lastAppliedMemoRevRef.current + 1)
+      lastAppliedMemoRevRef.current = memoRevision
+      const current = settingsRef.current
+
+      publishSession(
+        branchId,
+        {
+          screenMemo: typeof current.screenMemo === 'string' ? current.screenMemo : '',
+          memoFontSize: current.memoFontSize,
+          memoColor: current.memoColor,
+          memoOpen: Boolean(memoOpenRef.current),
+          memoRevision,
+        },
+        { uid },
+      )
+        .catch((error) => {
+          console.log('[session] memo publish failed:', error)
+        })
+        .finally(() => {
+          if (memoSyncPendingRef.current) send()
+          else memoSyncFlightRef.current = false
+        })
+    }
+
+    send()
+  }
+  publishMemoNowRef.current = publishMemoNow
+
+  const flushMemoSync = () => {
+    if (memoPublishTimerRef.current) {
+      clearTimeout(memoPublishTimerRef.current)
+      memoPublishTimerRef.current = null
+    }
+    publishMemoNow()
+  }
+
+  const scheduleMemoSync = () => {
+    if (!activeBranchIdRef.current || !authUidRef.current) return
+    if (memoPublishTimerRef.current) clearTimeout(memoPublishTimerRef.current)
+    memoPublishTimerRef.current = setTimeout(() => {
+      memoPublishTimerRef.current = null
+      publishMemoNow()
+    }, 400)
+  }
+
+  const persistMemo = (nextSettings, { immediate = false } = {}) => {
+    settingsRef.current = nextSettings
+    setSettings(nextSettings)
+    if (immediate) flushMemoSync()
+    else scheduleMemoSync()
+  }
+
+  useEffect(() => {
+    memoOpenRef.current = memoOpen
+  }, [memoOpen])
+
+  useEffect(() => {
+    memoEditingRef.current = memoEditing
+  }, [memoEditing])
+
+  useEffect(() => {
+    return () => {
+      if (!memoPublishTimerRef.current) return
+      clearTimeout(memoPublishTimerRef.current)
+      memoPublishTimerRef.current = null
+      publishMemoNowRef.current()
+    }
+  }, [])
 
   /** Smart TV용: 서버 최신 프리셋/세션을 받은 뒤 페이지를 캐시 버스팅 새로고침 */
   const handleLoadLatestVersion = async () => {
@@ -1096,18 +1225,6 @@ export default function App() {
     }
   }
 
-  const persistMemo = (nextSettings) => {
-    persistSettings(nextSettings)
-    if (!activeBranchId) return
-    // 메모만 갱신 — getSnapshot() endsAt 을 넣으면 startedAt 앵커와 충돌할 수 있음
-    publishTimerState({
-      levelIndex,
-      screenMemo: nextSettings.screenMemo,
-      memoFontSize: nextSettings.memoFontSize,
-      memoColor: nextSettings.memoColor,
-    })
-  }
-
   const syncStatusLabel =
     globalSyncStatus === 'loading'
       ? 'Firebase 동기화 중…'
@@ -1250,19 +1367,41 @@ export default function App() {
 
           <main className="timer-screen" aria-hidden={!audioReady}>
             <aside
-              className={`timer-screen__memo-rail${memoOpen ? ' is-open' : ''}`}
-              aria-label="메모"
+              className={`timer-screen__memo-rail${memoOpen || prizeOpen ? ' is-open' : ''}`}
+              aria-label="상금과 메모"
             >
               <div className="memo-panel__actions">
+                <button
+                  type="button"
+                  className={`memo-panel__action-btn${prizeOpen ? ' is-active' : ''}`}
+                  aria-expanded={prizeOpen}
+                  onClick={() => {
+                    const next = !prizeOpen
+                    setPrizeOpen(next)
+                    if (!next) return
+                    setMemoOpen(false)
+                    setMemoEditing(false)
+                    memoOpenRef.current = false
+                    memoEditingRef.current = false
+                    flushMemoSync()
+                  }}
+                >
+                  {prizeOpen ? '닫기' : '상금'}
+                </button>
                 <button
                   type="button"
                   className={`memo-panel__action-btn${memoOpen ? ' is-active' : ''}`}
                   aria-expanded={memoOpen}
                   onClick={() => {
-                    setMemoOpen((open) => {
-                      if (open) setMemoEditing(false)
-                      return !open
-                    })
+                    const next = !memoOpen
+                    setPrizeOpen(false)
+                    setMemoOpen(next)
+                    memoOpenRef.current = next
+                    if (!next) {
+                      setMemoEditing(false)
+                      memoEditingRef.current = false
+                    }
+                    flushMemoSync()
                   }}
                 >
                   {memoOpen ? '닫기' : '메모'}
@@ -1271,7 +1410,11 @@ export default function App() {
                   <button
                     type="button"
                     className="memo-panel__action-btn memo-panel__action-btn--primary"
-                    onClick={() => setMemoEditing(false)}
+                    onClick={() => {
+                      setMemoEditing(false)
+                      memoEditingRef.current = false
+                      flushMemoSync()
+                    }}
                   >
                     완료
                   </button>
@@ -1280,14 +1423,24 @@ export default function App() {
                     type="button"
                     className="memo-panel__action-btn"
                     onClick={() => {
+                      setPrizeOpen(false)
                       setMemoOpen(true)
                       setMemoEditing(true)
+                      memoOpenRef.current = true
+                      memoEditingRef.current = true
+                      flushMemoSync()
                     }}
                   >
                     수정
                   </button>
                 )}
               </div>
+              <PrizePanel
+                open={prizeOpen}
+                prize={activeGame?.prize}
+                fontSize={settings.memoFontSize}
+                color={settings.memoColor}
+              />
               <MemoPanel
                 open={memoOpen}
                 editing={memoEditing}
@@ -1295,8 +1448,12 @@ export default function App() {
                 fontSize={settings.memoFontSize}
                 color={settings.memoColor}
                 onChange={(value) => persistMemo(updateScreenMemo(settings, value))}
-                onFontSizeChange={(size) => persistMemo(updateMemoStyle(settings, { fontSize: size }))}
-                onColorChange={(value) => persistMemo(updateMemoStyle(settings, { color: value }))}
+                onFontSizeChange={(size) =>
+                  persistMemo(updateMemoStyle(settings, { fontSize: size }), { immediate: true })
+                }
+                onColorChange={(value) =>
+                  persistMemo(updateMemoStyle(settings, { color: value }), { immediate: true })
+                }
               />
             </aside>
 

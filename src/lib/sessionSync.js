@@ -25,6 +25,10 @@ export function createEmptySession(partial = {}) {
     screenMemo: typeof partial.screenMemo === 'string' ? partial.screenMemo : '',
     memoFontSize: Number(partial.memoFontSize) || 30,
     memoColor: typeof partial.memoColor === 'string' ? partial.memoColor : '#c8a96b',
+    /** 패널 열림. 예전 문서에 없으면 null — 임의로 닫지 않기 위함 */
+    memoOpen: typeof partial.memoOpen === 'boolean' ? partial.memoOpen : null,
+    /** 타이머 revision 과 분리. 메모만 바뀌어도 다른 기기가 받을 수 있게 */
+    memoRevision: Number(partial.memoRevision) || 0,
     updatedAt: partial.updatedAt ?? null,
     updatedBy: partial.updatedBy ?? null,
     revision: Number(partial.revision) || 0,

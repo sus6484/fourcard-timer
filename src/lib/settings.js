@@ -38,6 +38,7 @@ function sanitizeGame(game, index) {
     name: typeof game.name === 'string' && game.name ? game.name : `Game ${index + 1}`,
     levels,
     memo: typeof game.memo === 'string' ? game.memo : '',
+    prize: typeof game.prize === 'string' ? game.prize : '',
     custom: Boolean(game.custom),
     branchId: normalizeBranchId(game.branchId),
   }

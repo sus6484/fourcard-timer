@@ -12,6 +12,7 @@ export function createGame(id, name, levels, options = {}) {
     name,
     levels: normalizeScheduleLevels(levels),
     memo: options.memo ?? '',
+    prize: options.prize ?? '',
     custom: options.custom ?? false,
     branchId: options.branchId ?? null,
   }
