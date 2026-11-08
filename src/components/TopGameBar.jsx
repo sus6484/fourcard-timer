@@ -46,7 +46,7 @@ export default function TopGameBar({
           <div className="game-slot">
             <button
               type="button"
-              className={`top-game-bar__settings game-slot__trigger${gameSlotMenuOpen ? ' is-open' : ''}`}
+              className="top-game-bar__settings"
               aria-expanded={gameSlotMenuOpen}
               aria-haspopup="menu"
               onClick={onToggleGameSlotMenu}

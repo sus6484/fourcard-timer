@@ -256,18 +256,6 @@ select {
   flex-shrink: 0;
 }
 
-.game-slot__trigger {
-  min-width: 88px;
-  border-color: var(--gold);
-  font-size: clamp(14px, 1.3cqw, 18px);
-  padding: 8px 16px;
-}
-
-.game-slot__trigger.is-open,
-.game-slot__trigger:hover {
-  background: rgba(200, 169, 107, 0.2);
-}
-
 .game-slot__menu {
   position: absolute;
   top: calc(100% + 8px);
