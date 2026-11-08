@@ -1,10 +1,83 @@
-import { doc, getDocFromServer, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
+import { doc, getDocFromServer, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { getFirebaseDb, isFirebaseConfigured } from './firebase.js'
 import { createResilientSnapshot } from './resilientSnapshot.js'
 import { parseTimestampMillis, syncedNow } from './serverClock.js'
 
+/** 같은 지점 계정 안의 동기화 채널. 게임 1은 기존 sessions/{branchId} 필드를 그대로 쓴다. */
+export const GAME_SLOTS = ['1', '2', '3']
+const GAME_SLOT_STORAGE_KEY = 'fourcard-timer-game-slot-v1'
+
+export function normalizeGameSlot(slot) {
+  const value = String(slot ?? '')
+  return GAME_SLOTS.includes(value) ? value : '1'
+}
+
+export function gameSlotLabel(slot) {
+  return `게임 ${normalizeGameSlot(slot)}`
+}
+
+export function loadGameSlot() {
+  try {
+    return normalizeGameSlot(localStorage.getItem(GAME_SLOT_STORAGE_KEY))
+  } catch {
+    return '1'
+  }
+}
+
+export function saveGameSlot(slot) {
+  try {
+    localStorage.setItem(GAME_SLOT_STORAGE_KEY, normalizeGameSlot(slot))
+  } catch {
+    // 저장을 못 해도 이번 화면의 선택값은 유지한다.
+  }
+}
+
 function sessionRef(branchId) {
   return doc(getFirebaseDb(), 'sessions', branchId)
+}
+
+function hasFlatSession(data) {
+  if (!data || typeof data !== 'object') return false
+  return (
+    data.updatedAt != null ||
+    data.revision != null ||
+    data.activeGameId != null ||
+    data.startedAt != null ||
+    data.endsAt != null ||
+    data.levelIndex != null ||
+    typeof data.isRunning === 'boolean'
+  )
+}
+
+/**
+ * 게임 1은 문서 최상위 필드, 게임 2·3은 slot2/slot3 맵.
+ * 한 문서를 같이 보더라도 다른 번호의 변경은 이쪽 세션으로 읽히지 않는다.
+ */
+export function readSlotSession(data, slot) {
+  if (!data || typeof data !== 'object') return null
+  const gameSlot = normalizeGameSlot(slot)
+  if (gameSlot === '1') {
+    if (!hasFlatSession(data)) return null
+    return createEmptySession(data)
+  }
+  const nested = data[`slot${gameSlot}`]
+  if (!nested || typeof nested !== 'object') return null
+  return createEmptySession(nested)
+}
+
+function sessionSnapshotKey(session) {
+  if (!session) return 'empty'
+  return JSON.stringify(session)
+}
+
+function nestSlotPatch(slot, payload) {
+  const gameSlot = normalizeGameSlot(slot)
+  if (gameSlot === '1') return null
+  const nested = {}
+  for (const [key, value] of Object.entries(payload)) {
+    nested[`slot${gameSlot}.${key}`] = value
+  }
+  return { gameSlot, nested }
 }
 
 export function createEmptySession(partial = {}) {
@@ -113,7 +186,7 @@ export function withDerivedEndsAt(session) {
   return { ...session, endsAt: derived }
 }
 
-export async function publishSession(branchId, patch, { uid } = {}) {
+export async function publishSession(branchId, patch, { uid, slot = '1' } = {}) {
   if (!branchId) {
     throw new Error('지점이 선택되지 않았습니다.')
   }
@@ -128,7 +201,20 @@ export async function publishSession(branchId, patch, { uid } = {}) {
     updatedBy: uid ?? null,
   }
 
-  await setDoc(sessionRef(branchId), payload, { merge: true })
+  const ref = sessionRef(branchId)
+  const nested = nestSlotPatch(slot, payload)
+  if (!nested) {
+    await setDoc(ref, payload, { merge: true })
+    return { updatedAt }
+  }
+
+  // 점 경로는 slot2의 해당 필드만 바꾼다. 게임 1 필드와 다른 번호는 건드리지 않는다.
+  try {
+    await updateDoc(ref, nested.nested)
+  } catch (error) {
+    if (error?.code !== 'not-found') throw error
+    await setDoc(ref, { [`slot${nested.gameSlot}`]: payload }, { merge: true })
+  }
   return { updatedAt }
 }
 
@@ -137,7 +223,7 @@ export async function publishSession(branchId, patch, { uid } = {}) {
  * 탭 복귀·Smart TV 절전 해제 시 onSnapshot이 묵음일 때 강제 동기화용.
  * startedAt: serverTimestamp() 발행 직후 해상도 확인에도 사용.
  */
-export async function fetchSession(branchId) {
+export async function fetchSession(branchId, slot = '1') {
   if (!branchId) return null
   if (!isFirebaseConfigured()) {
     throw new Error('Firebase 설정이 없습니다.')
@@ -145,16 +231,17 @@ export async function fetchSession(branchId) {
 
   const snapshot = await getDocFromServer(sessionRef(branchId))
   if (!snapshot.exists()) return null
-  return createEmptySession(snapshot.data())
+  return readSlotSession(snapshot.data(), slot)
 }
 
 /**
  * @param {string} branchId
+ * @param {string} slot 같은 계정의 게임 1·2·3
  * @param {(data: object | null) => void} onData
  * @param {(error: Error) => void} [onError]
  * @param {(status: 'connecting' | 'connected' | 'reconnecting' | 'offline') => void} [onStatus]
  */
-export function subscribeSession(branchId, onData, onError, onStatus) {
+export function subscribeSession(branchId, slot, onData, onError, onStatus) {
   if (!branchId) {
     onData(null)
     onStatus?.('offline')
@@ -166,17 +253,21 @@ export function subscribeSession(branchId, onData, onError, onStatus) {
     return () => {}
   }
 
+  const gameSlot = normalizeGameSlot(slot)
+  let lastKey = ''
+
   return createResilientSnapshot(
     (onNext, onSnapError) =>
       onSnapshot(
         sessionRef(branchId),
         (snapshot) => {
           // 문서가 없으면 빈 00:00 세션을 만들어 덮어쓰지 않습니다.
-          if (!snapshot.exists()) {
-            onNext(null)
-            return
-          }
-          onNext(createEmptySession(snapshot.data()))
+          const session = snapshot.exists() ? readSlotSession(snapshot.data(), gameSlot) : null
+          const key = sessionSnapshotKey(session)
+          // 다른 게임 번호가 같은 문서를 갱신해도 이 채널은 다시 적용하지 않습니다.
+          if (key === lastKey) return
+          lastKey = key
+          onNext(session)
         },
         onSnapError,
       ),

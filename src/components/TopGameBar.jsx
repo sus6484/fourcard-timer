@@ -1,4 +1,5 @@
 import GameSelector from './GameSelector.jsx'
+import { GAME_SLOTS, gameSlotLabel } from '../lib/sessionSync.js'
 
 export default function TopGameBar({
   globalGames,
@@ -11,6 +12,11 @@ export default function TopGameBar({
   onLogout,
   isLoggedIn = false,
   sessionLabel = '',
+  showGameSlot = false,
+  gameSlot = '1',
+  gameSlotMenuOpen = false,
+  onToggleGameSlotMenu,
+  onSelectGameSlot,
 }) {
   return (
     <div className="top-game-bar">
@@ -36,6 +42,44 @@ export default function TopGameBar({
         >
           {sessionLabel || '지점선택'}
         </button>
+        {showGameSlot ? (
+          <div className="game-slot">
+            <button
+              type="button"
+              className={`top-game-bar__settings game-slot__trigger${gameSlotMenuOpen ? ' is-open' : ''}`}
+              aria-expanded={gameSlotMenuOpen}
+              aria-haspopup="menu"
+              onClick={onToggleGameSlotMenu}
+            >
+              {gameSlotLabel(gameSlot)}
+            </button>
+            {gameSlotMenuOpen ? (
+              <>
+                <button
+                  type="button"
+                  className="game-selector__backdrop"
+                  aria-label="게임 번호 닫기"
+                  tabIndex={-1}
+                  onClick={onToggleGameSlotMenu}
+                />
+                <div className="game-slot__menu" role="menu">
+                  <p className="game-slot__note">이 화면만 이동합니다</p>
+                  {GAME_SLOTS.map((slot) => (
+                    <button
+                      key={slot}
+                      type="button"
+                      role="menuitem"
+                      className={`game-slot__item${slot === gameSlot ? ' is-active' : ''}`}
+                      onClick={() => onSelectGameSlot?.(slot)}
+                    >
+                      {gameSlotLabel(slot)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </div>
+        ) : null}
         {isLoggedIn ? (
           <button type="button" className="top-game-bar__settings" onClick={onLogout}>
             로그아웃

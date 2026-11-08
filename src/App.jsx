@@ -58,7 +58,10 @@ import {
   deriveEndsAtFromSession,
   deriveRemainingFromSession,
   fetchSession,
+  loadGameSlot,
+  normalizeGameSlot,
   publishSession,
+  saveGameSlot,
   subscribeSession,
   withDerivedEndsAt,
 } from './lib/sessionSync.js'
@@ -98,6 +101,8 @@ export default function App() {
   const [branchLoginError, setBranchLoginError] = useState('')
   const [branchLoginLoading, setBranchLoginLoading] = useState(false)
   const [latestRefreshing, setLatestRefreshing] = useState(false)
+  const [gameSlot, setGameSlot] = useState(loadGameSlot)
+  const [gameSlotMenuOpen, setGameSlotMenuOpen] = useState(false)
 
   const autoStartNextLevelRef = useRef(false)
   const skipLevelResetRef = useRef(false)
@@ -119,6 +124,13 @@ export default function App() {
   const publishMemoNowRef = useRef(() => {})
   const lastTimerSyncKeyRef = useRef('')
   const activeBranchIdRef = useRef('')
+  const gameSlotRef = useRef(gameSlot)
+  /** 게임 번호를 옮기는 동안 이전 판의 발행이 새 번호로 쓰이지 않게 막는다. */
+  const suppressSlotPublishRef = useRef(false)
+  /** 새 번호에 세션이 없으면 이 화면만 처음 상태로 되돌린다. */
+  const pendingSlotJoinRef = useRef(false)
+  const pauseRef = useRef(null)
+  const showFreshLocalGameRef = useRef(null)
   const authUidRef = useRef(authSession?.uid || '')
   const settingsRef = useRef(settings)
   const levelIndexRef = useRef(levelIndex)
@@ -149,6 +161,10 @@ export default function App() {
   useEffect(() => {
     activeBranchIdRef.current = activeBranchId
   }, [activeBranchId])
+
+  useEffect(() => {
+    gameSlotRef.current = gameSlot
+  }, [gameSlot])
 
   useEffect(() => {
     authUidRef.current = authUid
@@ -355,7 +371,8 @@ export default function App() {
   const publishTimerState = useCallback(async (partial) => {
     const branchId = activeBranchIdRef.current
     const uid = authUidRef.current
-    if (!branchId || !uid) return
+    const slot = gameSlotRef.current
+    if (!branchId || !uid || suppressSlotPublishRef.current) return
 
     const revision = Date.now()
     lastPublishedRevisionRef.current = revision
@@ -369,7 +386,7 @@ export default function App() {
           revision,
           ...partial,
         },
-        { uid },
+        { uid, slot },
       )
     } catch (error) {
       console.log('[session] publish failed:', error)
@@ -382,9 +399,11 @@ export default function App() {
    */
   const reconcileAfterServerStart = useCallback(async () => {
     const branchId = activeBranchIdRef.current
+    const slot = gameSlotRef.current
     if (!branchId) return
     try {
-      const session = await fetchSession(branchId)
+      const session = await fetchSession(branchId, slot)
+      if (gameSlotRef.current !== slot) return
       if (!session?.isRunning) return
       // 서버 startedAt 으로 offset 을 맞춘 뒤 endsAt 을 파생·적용
       if (typeof session.startedAt === 'number') {
@@ -406,6 +425,7 @@ export default function App() {
     isRunning,
     toggle,
     reset,
+    pause,
     adjustSeconds,
     setSeconds,
     applyRemoteSession,
@@ -415,6 +435,7 @@ export default function App() {
   })
 
   resetRef.current = reset
+  pauseRef.current = pause
   publishTimerStateRef.current = publishTimerState
   applyRemoteSessionRef.current = applyRemoteSession
   syncFromServerClockRef.current = syncFromServerClock
@@ -735,29 +756,71 @@ export default function App() {
     }
   }, [activeGame?.id, levelIndex, initialSeconds])
 
+  const showFreshLocalGame = useCallback(() => {
+    const game = getActiveGame(settingsRef.current)
+    const seconds = levelSeconds(game?.levels?.[0])
+    const syncKey = `${game?.id ?? ''}:0:${seconds}`
+    lastTimerSyncKeyRef.current = syncKey
+    if (levelIndexRef.current !== 0) {
+      localAdvanceRef.current = true
+      levelIndexRef.current = 0
+      setLevelIndex(0)
+    }
+    resetRef.current?.(seconds, { autoStart: false })
+    memoOpenRef.current = false
+    setMemoOpen(false)
+    setMemoEditing(false)
+    setSettings((current) => {
+      if (!current.screenMemo) return current
+      const next = updateScreenMemo(current, '')
+      settingsRef.current = next
+      return next
+    })
+  }, [levelSeconds])
+
+  showFreshLocalGameRef.current = showFreshLocalGame
+
   useEffect(() => {
     if (!authUid || !activeBranchId) {
       setSessionLinkStatus('idle')
       return undefined
     }
 
+    let active = true
+    const slot = gameSlot
     setSessionLinkStatus('connecting')
 
     const unsubscribe = subscribeSession(
       activeBranchId,
+      slot,
       (session) => {
+        if (!active || gameSlotRef.current !== slot) return
+        suppressSlotPublishRef.current = false
+        if (!session) {
+          if (pendingSlotJoinRef.current) {
+            pendingSlotJoinRef.current = false
+            showFreshLocalGameRef.current?.()
+          }
+          return
+        }
+        pendingSlotJoinRef.current = false
         applyIncomingSessionRef.current?.(session)
       },
       (error) => {
+        suppressSlotPublishRef.current = false
+        pendingSlotJoinRef.current = false
         console.log('[session] subscribe failed:', error)
       },
       (status) => {
-        setSessionLinkStatus(status)
+        if (active) setSessionLinkStatus(status)
       },
     )
 
-    return unsubscribe
-  }, [authUid, activeBranchId])
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [authUid, activeBranchId, gameSlot])
 
   // Smart TV / 백그라운드 탭 복귀 시: 서버 시계·세션·프리셋 강제 동기화 (폴링 아님, 이벤트+쓰로틀)
   useEffect(() => {
@@ -800,10 +863,15 @@ export default function App() {
               console.log('[presets] visibility resume sync failed:', error)
             })
 
+          const slot = gameSlotRef.current
           const sessionPromise = branchId
-            ? fetchSession(branchId)
+            ? fetchSession(branchId, slot)
                 .then((session) => {
-                  if (session && activeBranchIdRef.current === branchId) {
+                  if (
+                    session &&
+                    activeBranchIdRef.current === branchId &&
+                    gameSlotRef.current === slot
+                  ) {
                     applyIncomingSessionRef.current?.(session)
                   }
                 })
@@ -853,7 +921,8 @@ export default function App() {
     const send = () => {
       const branchId = activeBranchIdRef.current
       const uid = authUidRef.current
-      if (!memoSyncPendingRef.current || !branchId || !uid) {
+      const slot = gameSlotRef.current
+      if (!memoSyncPendingRef.current || !branchId || !uid || suppressSlotPublishRef.current) {
         memoSyncFlightRef.current = false
         memoSyncPendingRef.current = false
         return
@@ -874,7 +943,7 @@ export default function App() {
           memoOpen: Boolean(memoOpenRef.current),
           memoRevision,
         },
-        { uid },
+        { uid, slot },
       )
         .catch((error) => {
           console.log('[session] memo publish failed:', error)
@@ -962,8 +1031,9 @@ export default function App() {
 
         if (branchId) {
           try {
-            const session = await fetchSession(branchId)
-            if (session && activeBranchIdRef.current === branchId) {
+            const slot = gameSlotRef.current
+            const session = await fetchSession(branchId, slot)
+            if (session && activeBranchIdRef.current === branchId && gameSlotRef.current === slot) {
               applyIncomingSessionRef.current?.(session)
             }
           } catch (error) {
@@ -979,6 +1049,7 @@ export default function App() {
   const selectGlobal = (gameId) => {
     persistSettings(selectGlobalGame(settings, gameId))
     setGlobalMenuOpen(false)
+    setGameSlotMenuOpen(false)
     if (activeBranchId) {
       const game = settings.globalGames.find((item) => item.id === gameId)
       const seconds = levelSeconds(game?.levels?.[0])
@@ -988,6 +1059,27 @@ export default function App() {
         ...buildPausedPatch(seconds),
       })
     }
+  }
+
+  const handleSelectGameSlot = (slot) => {
+    const next = normalizeGameSlot(slot)
+    setGameSlotMenuOpen(false)
+    if (next === gameSlotRef.current) return
+
+    if (memoPublishTimerRef.current) {
+      clearTimeout(memoPublishTimerRef.current)
+      memoPublishTimerRef.current = null
+    }
+    memoSyncPendingRef.current = false
+    suppressSlotPublishRef.current = true
+    pendingSlotJoinRef.current = true
+    lastPublishedRevisionRef.current = 0
+    lastAppliedMemoRevRef.current = 0
+    localAuthorityUntilRef.current = 0
+    pauseRef.current?.()
+    saveGameSlot(next)
+    gameSlotRef.current = next
+    setGameSlot(next)
   }
 
   const handleControl = (action) => {
@@ -1461,7 +1553,7 @@ export default function App() {
               <img src={logoUrl} alt="" className="timer-screen__watermark-logo" />
             </div>
 
-            <header className={`timer-screen__top${globalMenuOpen ? ' is-menu-open' : ''}`}>
+            <header className={`timer-screen__top${globalMenuOpen || gameSlotMenuOpen ? ' is-menu-open' : ''}`}>
               <div className="timer-screen__level-block">
                 <p className="timer-screen__level">{getScheduleLabel(levels, levelIndex)}</p>
               </div>
@@ -1470,13 +1562,24 @@ export default function App() {
                 globalGames={settings.globalGames}
                 activeGlobalGameId={settings.activeGlobalGameId}
                 globalMenuOpen={globalMenuOpen}
-                onToggleGlobalMenu={() => setGlobalMenuOpen((open) => !open)}
+                onToggleGlobalMenu={() => {
+                  setGlobalMenuOpen((open) => !open)
+                  setGameSlotMenuOpen(false)
+                }}
                 onSelectGlobalGame={selectGlobal}
                 onOpenGlobalSettings={handleOpenGlobalSettings}
                 onOpenBranchLogin={handleOpenBranchLogin}
                 onLogout={handleLogout}
                 isLoggedIn={Boolean(authSession)}
                 sessionLabel={sessionLabel}
+                showGameSlot={Boolean(activeBranchId)}
+                gameSlot={gameSlot}
+                gameSlotMenuOpen={gameSlotMenuOpen}
+                onToggleGameSlotMenu={() => {
+                  setGameSlotMenuOpen((open) => !open)
+                  setGlobalMenuOpen(false)
+                }}
+                onSelectGameSlot={handleSelectGameSlot}
               />
             </header>
 
